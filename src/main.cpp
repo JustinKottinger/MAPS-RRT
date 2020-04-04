@@ -15,6 +15,7 @@
 #include "../includes/CreateSimpleSetup.h"
 #include "../includes/KinematicCar.h"
 #include "../includes/MyPlanner.h"
+#include "../includes/MAPSRRTPathControl.h"
 
 
 class KinematicCarStateValidityChecker : public ob::StateValidityChecker
@@ -127,7 +128,8 @@ public:
 
 void plan(std::vector<double> bndry, std::vector<double> gol, 
     std::vector<double> obs, std::vector<double> start, std::string model, 
-    const double planningTime, const double Tollorance, std::vector<std::string> data)
+    const double planningTime, const double Tollorance, std::vector<std::string> data, 
+    const int NumberofVehicles, const int DimensionOfVehicle, int MaxSegments)
 {
     oc::SimpleSetupPtr ss;
     CreateSimpleSetup(ss, bndry, gol, start, model, Tollorance);
@@ -146,7 +148,8 @@ void plan(std::vector<double> bndry, std::vector<double> gol,
     }
     
     
-    ob::PlannerPtr planner(new oc::MAPSRRT(ss->getSpaceInformation()));
+    ob::PlannerPtr planner(new oc::MAPSRRT(ss->getSpaceInformation(), 
+        NumberofVehicles, DimensionOfVehicle, MaxSegments));
     ss->setPlanner(planner);
 
     ss->setup();
@@ -159,23 +162,24 @@ void plan(std::vector<double> bndry, std::vector<double> gol,
     {
       std::cout << "Found solution:" << std::endl;
 
-      oc::PathControl path = ss->getSolutionPath();
-      std::ofstream PathFile;
-      PathFile.open("txt/path.txt");
-      if (PathFile.fail())
-      {
-        std::cerr << "ERROR: Could not open path.txt" << std::endl;
-        exit(1);
-      }
-      else
-      {
-        std::cout << "Writing solution to path.txt" << std::endl;
-        // PathFile << data << std::endl;
-        path.printAsMatrix(PathFile);
-        PathFile.close();
-        std::cout << "Computation completed successfully" << std::endl;
-        // path.print(std::cout);  // this prints out the solution
-      }
+      // oc::PathControl path = ss->getSolutionPath();
+      // std::cout << "here" << std::endl;
+      // std::ofstream PathFile;
+      // PathFile.open("txt/path.txt");
+      // if (PathFile.fail())
+      // {
+      //   std::cerr << "ERROR: Could not open path.txt" << std::endl;
+      //   exit(1);
+      // }
+      // else
+      // {
+      //   std::cout << "Writing solution to path.txt" << std::endl;
+      //   // PathFile << data << std::endl;
+      //   path.printAsMatrix(PathFile);
+      //   PathFile.close();
+      //   std::cout << "Computation completed successfully" << std::endl;
+      //   // path.print(std::cout);  // this prints out the solution
+      // }
     }
 }
 
@@ -196,10 +200,13 @@ int main(int /*argc*/, char ** /*argv*/)
 
     readFile("txt/world2agents.txt", bndry, gol, obs, strt, DynModel, dim, NumVs, NumCs, data);
     
-    double SolveTime = 5.0;
+    double SolveTime = 7.0;
     double Tollorance = 1.0;  // i am impatient with code
 
-    plan(bndry, gol, obs, strt, DynModel, SolveTime, Tollorance, data);
+    // need to add this to read file eventually
+    int MaxSegments = 100;
+
+    plan(bndry, gol, obs, strt, DynModel, SolveTime, Tollorance, data, NumVs, dim, MaxSegments);
 
 
 
