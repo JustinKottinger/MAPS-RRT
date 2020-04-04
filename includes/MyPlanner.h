@@ -67,7 +67,8 @@ namespace ompl
         {
         public:
             /** \brief Constructor */
-            MAPSRRT(const SpaceInformationPtr &si);
+            MAPSRRT(const SpaceInformationPtr &si, int NumVehicles, int DimofEachVehicle, 
+                int MaxSegments);
 
             ~MAPSRRT() override;
 
@@ -155,7 +156,41 @@ namespace ompl
 
                 /** \brief The parent motion in the exploration tree */
                 Motion *parent{nullptr};
+
+                // In MAPS, each motion has a cost
+                // the cost is the number of segments that are required 
+                // to explain the path with this motion
+
+                void SetCost(int a)
+                {
+                    cost = a;
+                }
+
+                int GetCost()
+                {
+                    return cost;
+                }
+
+                void CopyCosts(Motion *a, Motion *b);
+
+                void NeedSegment()
+                {
+                    Segment = true;
+                }
+                int cost{1};
+
+            private:
+                bool Segment{false};
+
+                
             };
+
+            // const Motion * ResetProjection(const Motion *motion, int d);
+
+
+            std::vector<bool>  Project2D(const Motion *a, int d);
+
+            void FindTotalIntersections(Motion *motion);
 
             /** \brief Free the memory allocated by this planner */
             void freeMemory();
@@ -165,6 +200,17 @@ namespace ompl
             {
                 return si_->distance(a->state, b->state);
             }
+
+            // const SpaceInformationPtr si_;
+
+            // used for projections in the obs checking
+            int NumVs;
+
+            // used for projections in the obs checking
+            int dim;
+
+            // The number of disjoint segments allowed in the solution
+            int MaxSegments_;
 
             /** \brief State sampler */
             base::StateSamplerPtr sampler_;
