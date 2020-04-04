@@ -8,73 +8,118 @@
 #include <iostream>
 #include <valarray>
 #include <limits>
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/geometries.hpp>
+// my includes
+#include "../includes/KinematicCar.h"
 
 namespace ob = ompl::base;
 namespace oc = ompl::control;
+namespace bg = boost::geometry;
+namespace trans = boost::geometry::strategy::transform;
 
-// Kinematic car model object definition.  This class does NOT use ODESolver to propagate the system.
-// class KinematicCarModel : public oc::StatePropagator
-// {
-//     public:
-//         KinematicCarModel(const oc::SpaceInformationPtr &si) : oc::StatePropagator(si)
-//         {
-//            space_     = si->getStateSpace();
-//            carLength_ = 0.2;
-//            timeStep_  = 0.01;
-//         }
+typedef bg::model::point<double, 2, bg::cs::cartesian> point;
+typedef bg::model::polygon<point> polygon;
 
-//         std::string data_;
 
-//          void propagate(const ob::State *state, const oc::Control* control, const double duration, ob::State *result) const override
-//         {
-//             EulerIntegration(state, control, duration, result);
-//         }
+// this function is used for any 2D projection needed
+// include but not limited to: obs checking, and path segmenting
+std::vector<polygon> TwoKinematicCarsModel::GetPolygons()
+{
+    std::vector<polygon> Vehicles;
+    // *********************
+    // ***** vehicle 1 *****
+    // *********************
 
-//     protected:
-//         // Explicit Euler Method for numerical integration.
-//         void EulerIntegration(const ob::State *start, const oc::Control *control, const double duration, ob::State *result) const
-//         {
-//             double t = timeStep_;
-//             std::valarray<double> dstate;
-//             space_->copyState(result, start);
-//             while (t < duration + std::numeric_limits<double>::epsilon())
-//             {
-//                 ode(result, control, dstate);
-//                 update(result, timeStep_ * dstate);
-//                 t += timeStep_;
-//             }
-//             if (t + std::numeric_limits<double>::epsilon() > duration)
-//             {
-//                 ode(result, control, dstate);
-//                 update(result, (t - duration) * dstate);
-//             }
-//         }
+    // create the shape of the vehicle centered at (0, 0)
+    // point A1 = [-0.5l, -0.5w]
+    point BackR1( -0.5 * carLength_, -0.5 * carWidth_);
+    // point B1 = [-0.5l, +0.5w]
+    point BackL1( (-0.5 * carLength_), (0.5 * carWidth_));
+    // point C1 = [+0.5l, +0.5w]
+    point FrontL1( (0.5 * carLength_), (0.5 * carWidth_));
+    // point B1 = [+0.5l, -0.5w]
+    point FrontR1( (0.5 * carLength_), (-0.5 * carWidth_));
 
-//         void ode(const ob::State *state, const oc::Control *control, std::valarray<double> &dstate) const
-//         {
-//             const double *u = control->as<oc::RealVectorControlSpace::ControlType>()->values;
-//             const double theta = state->as<ob::SE2StateSpace::StateType>()->getYaw();
+    // note that for some reason, boost rotation is not conventional to counter clockwise = positive angle
+    // to counter this, I use a negative angle
+    trans::rotate_transformer<bg::radian, double, 2, 2>rotate1(-(rot1_->value));
 
-//             dstate.resize(3);
-//             dstate[0] = u[0] * cos(theta);
-//             dstate[1] = u[0] * sin(theta);
-//             dstate[2] = u[0] * tan(u[1]) / carLength_;
-//         }
+    boost::geometry::transform(BackR1, BackR1, rotate1);
+    boost::geometry::transform(BackL1, BackL1, rotate1);
+    boost::geometry::transform(FrontL1, FrontL1, rotate1);
+    boost::geometry::transform(FrontR1, FrontR1, rotate1);
 
-//         void update(ob::State *state, const std::valarray<double> &dstate) const
-//         {
-//             ob::SE2StateSpace::StateType &s = *state->as<ob::SE2StateSpace::StateType>();
-//             s.setX(s.getX() + dstate[0]);
-//             s.setY(s.getY() + dstate[1]);
-//             s.setYaw(s.getYaw() + dstate[2]);
-//             space_->enforceBounds(state);
-//         }
+    // now, translate the polygon to the state location
+    trans::translate_transformer<double, 2, 2> translate1(xyState1_->values[0], xyState1_->values[1]);
 
-//         ob::StateSpacePtr        space_;
-//         double                   carLength_;
-//         double                   timeStep_;
-        
-// };
+    boost::geometry::transform(BackR1, BackR1, translate1);
+    boost::geometry::transform(BackL1, BackL1, translate1);
+    boost::geometry::transform(FrontL1, FrontL1, translate1);
+    boost::geometry::transform(FrontR1, FrontR1, translate1);
+
+    // create instance of polygon
+    polygon v1;
+    // // add the outer points to the shape
+    v1.outer().push_back(BackR1);
+    v1.outer().push_back(BackL1);
+    v1.outer().push_back(FrontL1);
+    v1.outer().push_back(FrontR1);
+    v1.outer().push_back(BackR1);
+
+    Vehicles.push_back(v1);
+
+    // // *********************
+    // // ***** vehicle 2 *****
+    // // *********************
+
+    point BackR2( -0.5 * carLength_, -0.5 * carWidth_);
+    // point B1 = [-0.5l, +0.5w]
+    point BackL2( (-0.5 * carLength_), (0.5 * carWidth_));
+    // point C1 = [+0.5l, +0.5w]
+    point FrontL2( (0.5 * carLength_), (0.5 * carWidth_));
+    // point B1 = [+0.5l, -0.5w]
+    point FrontR2( (0.5 * carLength_), (-0.5 * carWidth_));
+
+    trans::rotate_transformer<bg::radian, double, 2, 2>rotate2(-(rot2_->value));
+
+    boost::geometry::transform(BackR2, BackR2, rotate2);
+    boost::geometry::transform(BackL2, BackL2, rotate2);
+    boost::geometry::transform(FrontL2, FrontL2, rotate2);
+    boost::geometry::transform(FrontR2, FrontR2, rotate2);
+
+    // now, translate the polygon to the state location
+    trans::translate_transformer<double, 2, 2> translate2(xyState2_->values[0], xyState2_->values[1]);
+
+    boost::geometry::transform(BackR2, BackR2, translate2);
+    boost::geometry::transform(BackL2, BackL2, translate2);
+    boost::geometry::transform(FrontL2, FrontL2, translate2);
+    boost::geometry::transform(FrontR2, FrontR2, translate2);
+
+    // create instance of polygon
+    polygon v2;
+    // // add the outer points to the shape
+    v2.outer().push_back(BackR1);
+    v2.outer().push_back(BackL1);
+    v2.outer().push_back(FrontL1);
+    v2.outer().push_back(FrontR1);
+    v2.outer().push_back(BackR1);
+
+    Vehicles.push_back(v2);
+
+    return Vehicles;
+}
+
+
+void list_coordinates(point const& p) 
+{ 
+    using boost::geometry::get; 
+    
+    std::cout << "x = " << get<0>(p) << " y = " << get<1>(p) << std::endl; 
+
+} 
+
+
 
 // Definition of the ODE for the kinematic car.
 // This method is analogous to the above KinematicCarModel::ode function.
