@@ -166,12 +166,15 @@ namespace ompl
                     cost = a;
                 }
 
-                int GetCost()
+                // int GetCost()
+                // {
+                //     return cost;
+                // }
+
+                int GetCost() const
                 {
                     return cost;
                 }
-
-                void CopyCosts(Motion *a, Motion *b);
 
                 void NeedSegment()
                 {
@@ -184,6 +187,8 @@ namespace ompl
 
                 
             };
+
+            int FindTotalPathCost(const Motion *m);
 
             // const Motion * ResetProjection(const Motion *motion, int d);
 
