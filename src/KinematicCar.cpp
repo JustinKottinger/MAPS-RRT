@@ -167,8 +167,6 @@ void TwoKinematicCarsODE (const oc::ODESolver::StateType& q, const oc::Control* 
     qdot[5] = u[2] * tan(u[3]) / carLength;
 }
 // multi agent callback function
-// this may not work properly
-// need to check somehow
 void postProp_TwoKinematicCars(const ob::State *q, const oc::Control *ctl, 
     const double duration, ob::State *qnext)
 {

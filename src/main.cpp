@@ -5,6 +5,7 @@
 #include <ompl/control/spaces/RealVectorControlSpace.h>
 #include <ompl/control/SimpleSetup.h>
 #include <ompl/config.h>
+#include <ompl/control/planners/rrt/RRT.h>
 // #include <ompl/control/planners/rrt/RRT.h>
 // std includes
 #include <iostream>
@@ -150,6 +151,9 @@ void plan(std::vector<double> bndry, std::vector<double> gol,
     
     ob::PlannerPtr planner(new oc::MAPSRRT(ss->getSpaceInformation(), 
         NumberofVehicles, DimensionOfVehicle, MaxSegments));
+    
+    // ob::PlannerPtr planner(new oc::RRT(ss->getSpaceInformation()));
+
     ss->setPlanner(planner);
 
     ss->setup();
@@ -200,11 +204,11 @@ int main(int /*argc*/, char ** /*argv*/)
 
     readFile("txt/world2agents.txt", bndry, gol, obs, strt, DynModel, dim, NumVs, NumCs, data);
     
-    double SolveTime = 7.0;
+    double SolveTime = 10.0;
     double Tollorance = 1.0;  // i am impatient with code
 
     // need to add this to read file eventually
-    int MaxSegments = 100;
+    int MaxSegments = 30;
 
     plan(bndry, gol, obs, strt, DynModel, SolveTime, Tollorance, data, NumVs, dim, MaxSegments);
 
