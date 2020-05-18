@@ -9,4 +9,7 @@ void readFile(const char* filename, std::vector<double> &b, std::vector<double> 
 
 void print(std::vector<double> const &vec);
 
+void MyPrint(std::vector<double> vec);
+
+
 void print(std::vector<std::string> const &vec);

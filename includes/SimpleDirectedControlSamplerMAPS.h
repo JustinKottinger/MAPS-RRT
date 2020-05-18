@@ -71,7 +71,7 @@ namespace ompl
             /** \brief Constructor takes the state space to construct samples for as argument
                 Optionally, a \e k value can be given to indicate the number of controls to
                 try when directing a system toward a specific state.  Default value is 1. */
-            SimpleDirectedControlSamplerMAPS(const ompl::control::SpaceInformation *si, base::Goal *Goal, unsigned int k = 1);
+            SimpleDirectedControlSamplerMAPS(const ompl::control::SpaceInformation *si, base::Goal *Goal, std::vector<double> GoalState, unsigned int k = 1);
 
             ~SimpleDirectedControlSamplerMAPS(); // override;
 
@@ -83,6 +83,8 @@ namespace ompl
 
             bool FoundGoal(const ob::RealVectorStateSpace::StateType * S, 
                 const ob::RealVectorStateSpace::StateType * G);
+
+            std::vector<double> TwoVehicleDistance(const ob::State *st);
 
             /** \brief Set the number of controls to generate when finding the best control. */
             void setNumControlSamplesMAPS(unsigned int numSamples)
@@ -127,12 +129,15 @@ namespace ompl
             /** \brief The number of controls to sample when finding the best control*/
             unsigned int numControlSamples_;
 
-            // the goal
+            // the goal object
             base::Goal *goal;
 
             // the control space
             const ompl::control::ControlSpacePtr siC_;
-        };
+
+            // the goal state
+            std::vector<double> g;
+        };                  
 
     }
 }

@@ -18,9 +18,6 @@ namespace oc = ompl::control;
 namespace bg = boost::geometry;
 namespace trans = boost::geometry::strategy::transform;
 
-typedef bg::model::point<double, 2, bg::cs::cartesian> point;
-typedef bg::model::polygon<point> polygon;
-
 
 // this function is used for any 2D projection needed
 // include but not limited to: obs checking, and path segmenting
@@ -113,7 +110,7 @@ std::vector<polygon> TwoKinematicCarsModel::GetPolygons()
 
 void list_coordinates(point const& p) 
 { 
-    using boost::geometry::get; 
+    using boost::geometry::get;
     
     std::cout << "x = " << get<0>(p) << " y = " << get<1>(p) << std::endl; 
 
@@ -148,6 +145,7 @@ void KinematicCarPostIntegration (const ob::State* /*state*/, const oc::Control*
 // multi agent ODE function
 void TwoKinematicCarsODE (const oc::ODESolver::StateType& q, const oc::Control* control, oc::ODESolver::StateType& qdot)
 {
+    // std::cout << "here" << std::endl;
     const double *u = control->as<oc::RealVectorControlSpace::ControlType>()->values;
     // q = x1, y1, theta1, x2, y2, theta2
     // c = v1, phi1, v2, phi2 

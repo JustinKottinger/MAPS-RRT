@@ -37,6 +37,7 @@
 
 // my includes
 #include "../includes/SimpleDirectedControlSamplerMAPS.h"
+#include "../includes/ReadWorld.h"
 // #include "ompl/control/SimpleDirectedControlSampler.h"
 // ompl includes
 #include "ompl/control/SpaceInformation.h"
@@ -50,9 +51,10 @@ namespace ob = ompl::base;
 namespace oc = ompl::control;
 
 
-ompl::control::SimpleDirectedControlSamplerMAPS::SimpleDirectedControlSamplerMAPS(const SpaceInformation *si, base::Goal *Goal, unsigned int k)
+ompl::control::SimpleDirectedControlSamplerMAPS::SimpleDirectedControlSamplerMAPS(const SpaceInformation *si, base::Goal *Goal, std::vector<double> GoalState, unsigned int k)
   : si_(si), cs_(si->allocControlSampler()), numControlSamples_(k), goal(Goal), siC_(si_->getControlSpace()) //DirectedControlSampler(si), 
 {
+    g = GoalState;
 }
 
 ompl::control::SimpleDirectedControlSamplerMAPS::~SimpleDirectedControlSamplerMAPS() = default;
@@ -89,34 +91,46 @@ bool ompl::control::SimpleDirectedControlSamplerMAPS::FoundGoal(
     return false;
 }
 
+std::vector<double> ompl::control::SimpleDirectedControlSamplerMAPS::TwoVehicleDistance(const ob::State *st)
+{
+
+    std::vector<double> distances;
+    auto cs_ = st->as<ompl::base::CompoundStateSpace::StateType>();
+    auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+    auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
+
+    double deltax_v1 = pow((g[0] - xyState1_->values[0]), 2);
+    double deltay_v1 = pow((g[1] - xyState1_->values[1]), 2);
+    double deltax_v2 = pow((g[3] - xyState2_->values[0]), 2);
+    double deltay_v2 = pow((g[4] - xyState2_->values[1]), 2);
+
+    double d1 = sqrt(deltax_v1 + deltay_v1);
+    double d2 = sqrt(deltax_v2 + deltay_v2);
+
+    // double d = sqrt(deltax_v1 + deltay_v1 + deltax_v2 + deltay_v2);
+
+    distances.push_back(d1);
+    distances.push_back(d2);
+    // distances.push_back(d);
+    return distances;
+}
+
 
 unsigned int ompl::control::SimpleDirectedControlSamplerMAPS::getBestControlMAPS(Control *control, const base::State *source,
                                                                          base::State *dest, const Control *previous)
 {
-    // get information regarding source node
+    // // get information regarding source node
     const ob::CompoundStateSpace::StateType *src = source->as<ob::CompoundStateSpace::StateType>();
 
     const auto *SRCxyState1 = src->as<ob::RealVectorStateSpace::StateType>(0);
 
     const auto *SRCxyState2 = src->as<ob::RealVectorStateSpace::StateType>(2);
+    // std::cout << "in sampler" << std::endl;
 
-    // get information regarding goal node
-    auto *goal_state = dynamic_cast<base::GoalState *>(goal);
-
-    const ob::State *gs = goal_state->getState();
-
-    const ob::CompoundStateSpace::StateType *GState = gs->as<ob::CompoundStateSpace::StateType>();
-
-    const auto *GoalxyState1 = GState->as<ob::RealVectorStateSpace::StateType>(0);
-
-    const auto *GoalxyState2 = GState->as<ob::RealVectorStateSpace::StateType>(2);
-
-    // check to see if either vehicle found goal
-    bool found1 = FoundGoal(SRCxyState1, GoalxyState1);
-    bool found2 = FoundGoal(SRCxyState2, GoalxyState2);
+    std::vector<double> d = TwoVehicleDistance(dest);
 
     // if vehicle one found goal, then keep it in place 
-    if (found1)
+    if (d[0] <= 1.0)
     {
         // propogate as normal
         // Sample the first control
@@ -192,7 +206,7 @@ unsigned int ompl::control::SimpleDirectedControlSamplerMAPS::getBestControlMAPS
 
     }
     // if only vehilce two found goal, then keep it in place
-    else if (found2)
+    else if (d[1] <= 1.0)
     {
         // propogate as normal
         // Sample the first control

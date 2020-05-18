@@ -196,16 +196,21 @@ void CreateSimpleSetup(oc::SimpleSetupPtr& ss, std::vector<double> bndry,
         start[4] = strt[4];
         start[5] = strt[5];
 
-        ob::ScopedState<> goal(space);
-        goal[0] = gol[0];
-        goal[1] = gol[1];
-        goal[2] = gol[2];
-        goal[3] = gol[3];
-        goal[4] = gol[4];
-        goal[5] = gol[5];
+        ss->setStartState(start);
+
+        // ss->setGoal(goal);
+
+        // ob::ScopedState<> goal(space);
+        // goal[0] = gol[0];
+        // goal[1] = gol[1];
+        // goal[2] = gol[2];
+        // goal[3] = gol[3];
+        // goal[4] = gol[4];
+        // goal[5] = gol[5];
         // provide the start, goal and tollorance to simple setup class
 
-        ss->setStartAndGoalStates(start, goal, toll);
+        // ss->setStartAndGoalStates(start, goal, toll);
+        std::cout << "exiting simple setup" << std::endl;
 
     }
     else
