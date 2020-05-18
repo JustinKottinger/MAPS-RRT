@@ -40,6 +40,17 @@
 // #include "ompl/control/planners/rrt/RRT.h"
 #include "ompl/control/planners/PlannerIncludes.h"
 #include "ompl/datastructures/NearestNeighbors.h"
+#include <boost/geometry.hpp>
+
+namespace ob = ompl::base;
+namespace oc = ompl::control;
+namespace bg = boost::geometry;
+
+typedef boost::array< double , 6 > state_type;
+typedef bg::model::point<double, 2, bg::cs::cartesian> Point;
+typedef boost::geometry::model::segment<Point> Segment;
+typedef bg::model::polygon<Point> polygon;
+
 
 namespace ompl
 {
@@ -67,8 +78,9 @@ namespace ompl
         {
         public:
             /** \brief Constructor */
-            MAPSRRT(const SpaceInformationPtr &si, int NumVehicles, int DimofEachVehicle, 
-                int MaxSegments);
+            MAPSRRT(const ompl::control::SpaceInformationPtr &si, int NumVehicles, int NumControls,
+                int DimofEachVehicle, int MaxSegments, std::vector<double> goal, double radius, 
+                unsigned int k = 1);
 
             ~MAPSRRT() override;
 
@@ -145,6 +157,20 @@ namespace ompl
 
                 ~Motion() = default;
 
+                // In MAPS, each motion has a cost
+                // the cost is the number of segments that are required 
+                // to explain the path with this motion
+
+                void SetCost(int a)
+                {
+                    cost = a;
+                }
+
+                int GetCost() const
+                {
+                    return cost;
+                }
+
                 /** \brief The state contained by the motion */
                 base::State *state{nullptr};
 
@@ -157,45 +183,56 @@ namespace ompl
                 /** \brief The parent motion in the exploration tree */
                 Motion *parent{nullptr};
 
-                // In MAPS, each motion has a cost
-                // the cost is the number of segments that are required 
-                // to explain the path with this motion
-
-                void SetCost(int a)
-                {
-                    cost = a;
-                }
-
-                // int GetCost()
-                // {
-                //     return cost;
-                // }
-
-                int GetCost() const
-                {
-                    return cost;
-                }
-
-                void NeedSegment()
-                {
-                    Segment = true;
-                }
                 int cost{1};
 
+                int NumIntersections{0};
+
+                std::vector<std::vector<Point>> LinearPath;
+
+                std::vector<double> AllVehicleDistance;
+
             private:
-                bool Segment{false};
 
                 
             };
+            int MultiAgentControlSampler(Motion *motion, Control *RandCtrl, Control *previous, 
+                const base::State *source, base::State *dest);
 
-            int FindTotalPathCost(const Motion *m);
+            std::vector<double> TwoVehicleDistance(const base::State *st);
+
+            unsigned int propagateWhileValid(Motion *motion, const base::State *state, Control *control,
+                int steps, base::State *result, std::vector<int> DoNotProgogate);
+
+            void overrideStates(const std::vector<int> NoPropogation, const base::State *s, 
+                base::State *r, Control *control);
+
+            std::vector<Point> MakeLinearPath(const base::State *result) const;
+
+            void FindTotalIntersections(Motion *motion);
+            // bool
+            int Project2D(Motion *motion);
+
+            void Get2DimDistance(Motion *motion, const base::State *source, 
+                const base::State *result);
+
+            unsigned int FindTotalPathCost(Motion *motion);
+
+            std::vector<bool> CheckSegmentation(Motion *motion, int d, bool end);
+
+            // std::vector<Motion> GenerateMotionList(Motion *motion);
+
+            // std::vector<std::vector<double>> GeneratePathLengths(std::vector<Motion> CurrPath);
+
+            // int FindTotalSegments(const Motion *m);
+
+            // int FindTotalPathCost(const Motion *m);
 
             // const Motion * ResetProjection(const Motion *motion, int d);
 
 
-            std::vector<bool>  Project2D(const Motion *a, int d);
+            // std::vector<bool>  Project2D(const Motion *a, int d);
 
-            void FindTotalIntersections(Motion *motion);
+            // void FindTotalIntersections(Motion *motion);
 
             /** \brief Free the memory allocated by this planner */
             void freeMemory();
@@ -208,8 +245,13 @@ namespace ompl
 
             // const SpaceInformationPtr si_;
 
+            // const SpaceInformationPtr Csi_;
+
             // used for projections in the obs checking
             int NumVs;
+
+            // used for indexing controls
+            int NumCs;
 
             // used for projections in the obs checking
             int dim;
@@ -226,6 +268,8 @@ namespace ompl
             /** \brief The base::SpaceInformation cast as control::SpaceInformation, for convenience */
             const SpaceInformation *siC_;
 
+            // const SpaceInformationPtr Csi_{&siC_};
+
             /** \brief A nearest-neighbors datastructure containing the tree of motions */
             std::shared_ptr<NearestNeighbors<Motion *>> nn_;
 
@@ -241,6 +285,17 @@ namespace ompl
 
             /** \brief The most recent goal motion.  Used for PlannerData computation */
             Motion *lastGoalMotion_{nullptr};
+
+            // the goal vector
+            std::vector<double> g;
+
+            // the goal radius
+            double radius_;
+
+            // number of samples
+            unsigned int numControlSamples_;
+
+            double time_;
         };
     }
 }
