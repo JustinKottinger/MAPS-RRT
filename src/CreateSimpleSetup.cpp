@@ -138,15 +138,21 @@ void CreateSimpleSetup(oc::SimpleSetupPtr& ss, std::vector<double> bndry,
         // set the bounds for the first vehicle 
         // they will be the same as vehicle 2 but adding this way is more intuitve
         ob::RealVectorBounds boundsV1(2);
-        boundsV1.setLow(bndry[0]);
-        boundsV1.setHigh(bndry[3]);
+        boundsV1.setLow(0, bndry[0]); // x lower bound
+        boundsV1.setHigh(0, bndry[3]); // x upper bound
+        boundsV1.setLow(1, bndry[1]);  // y lower bound
+        boundsV1.setHigh(1, bndry[4]); //y upper bound
+
 
         // set the bounds of this space 
         cs->as<ob::RealVectorStateSpace>(0)->setBounds(boundsV1); 
         // create another instance of the bounds
         ob::RealVectorBounds boundsV2(2);
-        boundsV2.setLow(bndry[0]);
-        boundsV2.setHigh(bndry[3]);
+        boundsV2.setLow(0, bndry[0]);  // x lower bound
+        boundsV2.setHigh(0, bndry[3]);  // y upper bound
+        boundsV2.setLow(1, bndry[1]);  // y lower bound
+        boundsV2.setHigh(1, bndry[4]); //y upper bound
+
         // set the bounds of this space 
         // note the indexing change
         cs->as<ob::RealVectorStateSpace>(2)->setBounds(boundsV2);
@@ -210,7 +216,7 @@ void CreateSimpleSetup(oc::SimpleSetupPtr& ss, std::vector<double> bndry,
         // provide the start, goal and tollorance to simple setup class
 
         // ss->setStartAndGoalStates(start, goal, toll);
-        std::cout << "exiting simple setup" << std::endl;
+        // std::cout << "exiting simple setup" << std::endl;
 
     }
     else
