@@ -41,6 +41,9 @@
 #include "ompl/datastructures/NearestNeighbors.h"
 // #include "../includes/RRTplusPathControl.h"
 
+namespace ob = ompl::base;
+namespace oc = ompl::control;
+
 namespace ompl
 {
     namespace control
@@ -67,7 +70,8 @@ namespace ompl
         {
         public:
             /** \brief Constructor */
-            RRTplus(const SpaceInformationPtr &si, std::vector<double> goal);
+            RRTplus(const SpaceInformationPtr &si, std::vector<double> goal, int NumVehicles,
+                int NumControls, double radius);
 
             ~RRTplus() override;
 
@@ -166,6 +170,18 @@ namespace ompl
                 return si_->distance(a->state, b->state);
             }
 
+            void overrideStates(const std::vector<int> DoNotProp, const base::State *source, 
+                base::State *result, Control *control);
+
+            unsigned int propagateWhileValid(Motion *motion,const base::State *state, 
+                Control *control, int steps, base::State *result, 
+                const std::vector<int> DoNotProgogate);
+
+            int MultiAgentControlSampler(Motion *motion,Control *RandCtrl, Control *previous, 
+                const base::State *source, base::State *dest);
+
+            std::vector<double> TwoVehicleDistance(const base::State *st);
+
             /** \brief State sampler */
             base::StateSamplerPtr sampler_;
 
@@ -193,6 +209,12 @@ namespace ompl
 
             // the goal as a vector
             std::vector<double> g;
+
+            //  for the propogation functions
+            int NumVs;
+            int NumCs;
+            double radius_;
+            int numControlSamples_ = 1;
         };
     }
 }

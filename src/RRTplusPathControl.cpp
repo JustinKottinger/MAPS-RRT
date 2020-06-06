@@ -170,8 +170,8 @@ void ompl::control::RRTplusPathControl::printAsMatrix(std::ostream &out) const
         ++n;
     for (unsigned int i = 0; i < n + m; ++i)
         out << "0 ";
-    out << "0 ";
-    out << costs_[0] << std::endl;
+    out << "0" << std::endl;
+    // out << "0" << std::endl;
     for (unsigned int i = 0; i < controls_.size(); ++i)
     {
         space->copyToReals(reals, states_[i + 1]);
@@ -181,8 +181,8 @@ void ompl::control::RRTplusPathControl::printAsMatrix(std::ostream &out) const
         // print real-valued controls
         for (unsigned int j = 0; j < n; ++j)
             out << *cspace->getValueAddressAtIndex(controls_[i], j) << ' ';
-        out << controlDurations_[i] << ' ';
-        out << costs_[i + 1] << std::endl;
+        out << controlDurations_[i] << std::endl;;
+        // out << costs_[i + 1] << std::endl;
     }
 
 }
