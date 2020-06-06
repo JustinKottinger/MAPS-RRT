@@ -82,13 +82,14 @@ struct compare
 ompl::control::MAPSRRT::MAPSRRT(const ompl::control::SpaceInformationPtr &si, 
     int NumVehicles, int NumControls, int DimofEachVehicle,
     int MaxSegments, std::vector<double> goal, double radius, 
-    unsigned int k) : base::Planner(si, "MAPS-RRT"), numControlSamples_(k)
+    bool benchmark, unsigned int k) : base::Planner(si, "MAPS-RRT"), numControlSamples_(k)
 {
     specs_.approximateSolutions = true;
     // get the address of the SpaceInformation
     siC_ = si.get();
 
     MaxSegments_ = MaxSegments;
+    benchmark_ = benchmark;
 
     NumVs = NumVehicles;
     NumCs = NumControls;
@@ -566,8 +567,6 @@ int ompl::control::MAPSRRT::MultiAgentControlSampler(Motion *motion,Control *Ran
     // Propagate the first control, and find how far it is from the target state
     base::State *bestState = siC_->allocState();
 
-    // NEED TO CHANGE THIS -- RETURN THE SAME THOUGH
-    // steps = siC_->propagateWhileValid(source, RandCtrl, steps, bestState);
     steps = propagateWhileValid(motion, source, RandCtrl, steps, bestState, NoPropNeeded);
 
     if (numControlSamples_ > 1)
@@ -838,6 +837,9 @@ void ompl::control::MAPSRRT::FindTotalIntersections(Motion *NewMotion)
     // bool intersect
     int NumIntersect = Project2D(NewMotion);
 
+    // if (NewMotion->LocationsOfIntersect.size() != 0)
+    //     std::cout << NewMotion->LocationsOfIntersect.size();
+
     int ParentIntersections = NewMotion->parent->NumIntersections;
 
     if (NumIntersect > 0)
@@ -850,6 +852,8 @@ void ompl::control::MAPSRRT::FindTotalIntersections(Motion *NewMotion)
 int ompl::control::MAPSRRT::Project2D(Motion *NewMotion)
 {
     int NumIntersect = 0;
+
+    std::vector<Motion *> LocOfInt;
 
     // get linear path of the current motion for each vehicle
     std::vector<std::vector<Point>> NewPath = NewMotion->LinearPath;
@@ -943,6 +947,7 @@ int ompl::control::MAPSRRT::Project2D(Motion *NewMotion)
                             if (intersection)
                             {
                                 NumIntersect += 1;
+                                LocOfInt.push_back(CurrMotion);
                                 // std::cout << "returning true" << std::endl;
                                 // return true;
                             }
@@ -980,6 +985,7 @@ int ompl::control::MAPSRRT::Project2D(Motion *NewMotion)
                             if (intersection)
                             {
                                 NumIntersect += 1;
+                                LocOfInt.push_back(CurrMotion);
                                 // std::cout << "returning true" << std::endl;
                                 // return true;
                             }
@@ -990,6 +996,7 @@ int ompl::control::MAPSRRT::Project2D(Motion *NewMotion)
         }
         CurrMotion = CurrMotion->parent;
     }
+    NewMotion->LocationsOfIntersect = LocOfInt;
     return NumIntersect;
 }
 
@@ -997,6 +1004,11 @@ unsigned int ompl::control::MAPSRRT::FindTotalPathCost(Motion *LastMotion)
 {
     // std::cout << "in here" << std::endl;
     Motion *CurrMotion = LastMotion;
+    // if (CurrMotion->LocationsOfIntersect.size() != 0)
+    // {
+    //     std::cout << CurrMotion->LocationsOfIntersect.size() << std::endl;
+    // }
+    
     int NumSegs = 1;
     int depth = 1;
     bool done = false;
@@ -1012,11 +1024,16 @@ unsigned int ompl::control::MAPSRRT::FindTotalPathCost(Motion *LastMotion)
         // {
 
         // need to check for a segmentation
+
+        // THIS LINE WORKS!!!
         std::vector<bool> info = CheckSegmentation(CurrMotion, depth, done);
+
+        // This is for MAPSRRTmotion only!!
+        // std::vector<bool> info = CheckSegmentationTest(CurrMotion, depth);
 
         if (info[1]) // if found an intersection
         {
-            if (depth == 1)
+            if (depth == 1) 
             {
                 CurrMotion->SetCost(NumSegs);
                 CurrMotion = CurrMotion->parent;
@@ -1044,7 +1061,6 @@ unsigned int ompl::control::MAPSRRT::FindTotalPathCost(Motion *LastMotion)
             }
             NumSegs += 1;
             depth = 1;
-                
         }
         if (info[0])  // if done
         {
@@ -1066,6 +1082,59 @@ unsigned int ompl::control::MAPSRRT::FindTotalPathCost(Motion *LastMotion)
     CurrMotion->SetCost(NumSegs);
     // std::cout << "out" << std::endl;
     return NumSegs;
+}
+
+std::vector<bool> ompl::control::MAPSRRT::CheckSegmentationTest(Motion *motion, int depth)
+{
+	std::vector<bool> info;
+
+	std::vector<Motion *> CurrSegment;
+
+	const Motion *CurrMotion = motion;
+
+	Motion *CreateSegment = motion;
+
+	for (int i = 0; i < depth; i++)
+	{
+		if (CreateSegment->parent != nullptr)
+		{
+			CurrSegment.push_back(CreateSegment);
+			CreateSegment = CreateSegment->parent;
+		}
+		else
+		{
+			CurrSegment.push_back(CreateSegment);
+			info.push_back(true);
+			break;
+		}
+
+	}
+	if (info.size() == 0)
+		info.push_back(false);
+
+	for (int j = 0; j < CurrSegment.size(); j++)
+	{
+        // std::cout << CurrSegment[j] << std::endl;
+        // std::cout << CurrMotion->LocationsOfIntersect.size() << std::endl;
+
+        for (int check = 0; check < CurrSegment.size(); check++)
+        {
+
+		  for (int m = 0; m < CurrSegment[check]->LocationsOfIntersect.size(); m++)
+		  {
+                // std::cout << CurrSegment[j] << std::endl;
+                // std::cout << CurrMotion->LocationsOfIntersect[m] << std::endl;
+		  	if  (CurrSegment[j] == CurrSegment[check]->LocationsOfIntersect[m])
+		  	{
+		  		// there is an intersection within segment...
+		  		info.push_back(true);
+		  		return info;
+		  	}
+		  }
+        }
+	}
+	info.push_back(false);
+	return info;
 }
 
 std::vector<bool> ompl::control::MAPSRRT::CheckSegmentation(Motion *motion, int depth, bool done)
@@ -1346,7 +1415,7 @@ ompl::base::PlannerStatus ompl::control::MAPSRRT::solve(const base::PlannerTermi
 
     Motion *last = solution;
     // must stay here in the event that we exit planning loop without worrying about cost
-    int cost = FindTotalPathCost(last);
+    int cost = FindTotalPathCost(solution);
 
     // for (int i = 0; i < (solution->LinearPath).size(); i++)
     // {
@@ -1401,7 +1470,8 @@ ompl::base::PlannerStatus ompl::control::MAPSRRT::solve(const base::PlannerTermi
                 // path->append(mpath[i]->state);
             }
         solved = true;
-        pdef_->addSolutionPath(path, approximate, approxdif, getName());
+        if (benchmark_ == false)
+            pdef_->addSolutionPath(path, approximate, approxdif, getName());
         std::ofstream PathFile;
         PathFile.open("txt/path.txt");
         if (PathFile.fail())

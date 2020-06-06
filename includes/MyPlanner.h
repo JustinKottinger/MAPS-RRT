@@ -80,7 +80,7 @@ namespace ompl
             /** \brief Constructor */
             MAPSRRT(const ompl::control::SpaceInformationPtr &si, int NumVehicles, int NumControls,
                 int DimofEachVehicle, int MaxSegments, std::vector<double> goal, double radius, 
-                unsigned int k = 1);
+                bool benchmark, unsigned int k = 1);
 
             ~MAPSRRT() override;
 
@@ -191,6 +191,8 @@ namespace ompl
 
                 std::vector<double> AllVehicleDistance;
 
+                std::vector<Motion *> LocationsOfIntersect;
+
             private:
 
                 
@@ -218,6 +220,8 @@ namespace ompl
             unsigned int FindTotalPathCost(Motion *motion);
 
             std::vector<bool> CheckSegmentation(Motion *motion, int d, bool end);
+
+            std::vector<bool> CheckSegmentationTest(Motion *motion, int depth);
 
             // std::vector<Motion> GenerateMotionList(Motion *motion);
 
@@ -296,6 +300,8 @@ namespace ompl
             unsigned int numControlSamples_;
 
             double time_;
+
+            bool benchmark_;
         };
     }
 }
