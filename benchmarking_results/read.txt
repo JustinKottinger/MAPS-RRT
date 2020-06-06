@@ -1,0 +1,22 @@
+Steps to parse log files:
+
+Option 1:
+
+1. go to ompl directory where "ompl_benchmark_statistics.py" is located
+ - on my machine: "/opt/local/var/macports/distfiles/ompl/omplapp-1.4.2-Source"
+
+2. copy/paste following command into terminal: "ompl/scripts/ompl_benchmark_statistics.py results.log -d mydatabase.db"
+
+ -  this will create "mydatabase.db" in the "ompl/scripts/ompl_benchmark_statistics.py" directory
+ -  if you would rather the code find the log file from another directory and place the .db file in a different directory, simply proded that information in the command. 
+
+ -  For example: "ompl/scripts/ompl_benchmark_statistics.py /Users/Kotti/Desktop/MAPS-RRT/benchmarking_results/results.log -d /Users/Kotti/Desktop/MAPS-RRT/benchmarking_results/mydatabase.db"
+
+3. go to Kavraki Lab OMPL site and click "Planner Arena" link in the "how to benchmark" tutorial
+
+4. upload .db file
+
+
+Option 2 (Coming soon!): 
+
+Use my matlab code to read in the .log file. This will provide you with more functionality options since the user gets to decide how they wish to visualize the data. 
