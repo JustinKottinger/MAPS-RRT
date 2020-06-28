@@ -24,6 +24,7 @@
 #include "../includes/MAPSRRTPathControl.h"
 #include "ompl/tools/benchmark/Benchmark.h"
 #include "../includes/RRTplus.h"
+#include "../includes/MyRRT.h"
 // #include "../includes/RRTplusPathControl.h"
 
 
@@ -248,7 +249,7 @@ void plan(std::string planner, std::vector<double> bndry, std::vector<double> go
 
     if (planner == "RRT")
     {
-      ob::PlannerPtr planner(new oc::RRT(ss->getSpaceInformation()));
+      ob::PlannerPtr planner(new oc::MyRRT(ss->getSpaceInformation()));
 
       ss->setPlanner(planner);
 
@@ -358,22 +359,24 @@ void benchmark(std::vector<double> bndry, std::vector<double> gol,
   ob::PlannerPtr MapsRrtMotion(new oc::MAPSRRTmotion(ss->getSpaceInformation(),
         NumberofVehicles, NumberofControls, DimensionOfVehicle, MaxSegments, gol, Radius, benchmark));
   
-  ob::PlannerPtr Rrt(new oc::RRT(ss->getSpaceInformation()));
+  ob::PlannerPtr Rrt(new oc::MyRRT(ss->getSpaceInformation()));
 
   ob::PlannerPtr RrtPlus(new oc::RRTplus(ss->getSpaceInformation(), gol, NumberofVehicles,
     NumberofControls, Radius));
 
+  // addPlannerProgressProperty("best cost REAL", std::bind(&MapsRrtMotion::FinalCostProperty, this));
+
 
   // add the planners to the benchmark
   // b.addPlanner(MapsRrt);
-  // b.addPlanner(MapsRrtMotion);
-  b.addPlanner(Rrt);
-  b.addPlanner(RrtPlus);
+  b.addPlanner(MapsRrtMotion);
+  // b.addPlanner(Rrt);
+  // b.addPlanner(RrtPlus);
 
   // define parameters of the benchmark
   ompl::tools::Benchmark::Request req;
   req.maxTime = planningTime;
-  req.maxMem = 1000.0;
+  req.maxMem = 2000.0;
   req.runCount = numRuns;
   req.displayProgress = true;
 
@@ -409,7 +412,7 @@ int main(int /*argc*/, char ** /*argv*/)
     std::vector<double> obs;
     std::vector<double> strt;
 
-    readFile("txt/world2agents.txt", bndry, gol, obs, strt, DynModel, dim, NumVs, NumCs, data);
+    readFile("txt/RSS_World.txt", bndry, gol, obs, strt, DynModel, dim, NumVs, NumCs, data);
     
     double SolveTime;
     double Tollorance;

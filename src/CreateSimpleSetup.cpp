@@ -219,6 +219,55 @@ void CreateSimpleSetup(oc::SimpleSetupPtr& ss, std::vector<double> bndry,
         // std::cout << "exiting simple setup" << std::endl;
 
     }
+    else if (model == "2Linear")
+    {
+    	// ********************************************************************
+        // ************************* 2 Linear *********************************
+        // ********************************************************************
+
+        // add subspace for 2 vehcicles
+        // real vector space for x1 y1
+        cs->addSubspace(ob::StateSpacePtr(new ob::RealVectorStateSpace(2)), 1.0);
+        // real vector space for x2 y2
+        cs->addSubspace(ob::StateSpacePtr(new ob::RealVectorStateSpace(2)), 1.0);
+
+        // set the bounds for the first vehicle 
+        // they will be the same as vehicle 2 but adding this way is more intuitve
+        ob::RealVectorBounds boundsV1(2);
+        boundsV1.setLow(0, bndry[0]); // x lower bound
+        boundsV1.setHigh(0, bndry[3]); // x upper bound
+        boundsV1.setLow(1, bndry[1]);  // y lower bound
+        boundsV1.setHigh(1, bndry[4]); //y upper bound
+
+
+        // set the bounds of this space 
+        cs->as<ob::RealVectorStateSpace>(0)->setBounds(boundsV1); 
+        // create another instance of the bounds
+        ob::RealVectorBounds boundsV2(2);
+        boundsV2.setLow(0, bndry[0]);  // x lower bound
+        boundsV2.setHigh(0, bndry[3]);  // y upper bound
+        boundsV2.setLow(1, bndry[1]);  // y lower bound
+        boundsV2.setHigh(1, bndry[4]); //y upper bound
+
+        // set the bounds of this space 
+        // note the indexing change
+        cs->as<ob::RealVectorStateSpace>(2)->setBounds(boundsV2);
+
+        // now, we need to create a control space
+        // the realvectorcontrolspace constructor needs the state space it is in and the dimension
+        //      of the control space
+        // Note the controls of a Linear Dyn coorespond to the compound state space we defined 
+        // above. The constructor actually takes in the pointer so, "space" in my case.
+        //  The dimension is also 4 because we have two cars.
+        oc::ControlSpacePtr cspace(new oc::RealVectorControlSpace(space, 2));
+        // creat another instance of the bounds
+        ob::RealVectorBounds Cbounds(2);
+        Cbounds.setLow(0, -1);  // v1 lower bound
+        Cbounds.setHigh(0, 1);  // v1 upper bound
+        Cbounds.setLow(1, -1);  // v2 lower bound
+        Cbounds.setHigh(1, 1);  // v2 upper bound
+
+    }
     else
     {
         std::cout << "No matching model. Exiting Program to avoid error" << std::endl;
