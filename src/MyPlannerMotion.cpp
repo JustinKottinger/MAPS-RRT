@@ -72,11 +72,6 @@ struct compare
     }
 };
 
-// void PrintSegment(Segment line)
-// {
-
-// }
-
 
 // constructor
 ompl::control::MAPSRRTmotion::MAPSRRTmotion(const ompl::control::SpaceInformationPtr &si, 
@@ -100,6 +95,10 @@ ompl::control::MAPSRRTmotion::MAPSRRTmotion(const ompl::control::SpaceInformatio
 
     Planner::declareParam<double>("goal_bias", this, &MAPSRRTmotion::setGoalBias, &MAPSRRTmotion::getGoalBias, "0.:.05:1.");
     Planner::declareParam<bool>("intermediate_states", this, &MAPSRRTmotion::setIntermediateStates, &MAPSRRTmotion::getIntermediateStates);
+
+    addPlannerProgressProperty("best cost REAL", [this] { return FinalCostProperty(); });
+    
+
 }
 
 ompl::control::MAPSRRTmotion::~MAPSRRTmotion()
@@ -1474,8 +1473,9 @@ ompl::base::PlannerStatus ompl::control::MAPSRRTmotion::solve(const base::Planne
             }
             else
             {
+                // the root node does not have a parent
                 path->append(mpath[i]->state, mpath[i]->GetCost());
-                // path->append(mpath[i]->state);
+                FinalCost_ = mpath[i]->GetCost();
             }
         solved = true;
         if (benchmark_ == false)
@@ -1508,7 +1508,7 @@ ompl::base::PlannerStatus ompl::control::MAPSRRTmotion::solve(const base::Planne
     OMPL_INFORM("%s: Created %u states", getName().c_str(), nn_->size());
     // To see the error from exact sol to sol found
     OMPL_INFORM("%s: Solution Error was %f", getName().c_str(), approxdif);
-    OMPL_INFORM("%s: amount of time spent segmentating was %f", getName().c_str(), (time_ * 0.000001));
+    OMPL_INFORM("%s: Solution can explained in %i segment(s)", getName().c_str(), FinalCost_);
     return base::PlannerStatus(solved, approximate);
 }
 
