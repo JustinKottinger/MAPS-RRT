@@ -101,16 +101,16 @@ elseif NumVs == 2
             ylim([Bndry(2), Bndry(5)])     
         end
         for j = 1 : NumVs
-% %         [time, StateNew] = KinematicCar(current(1), current(2), ...
-% %             current(3), Controls(i + 1,:), Durations(i + 1));
-% %         current = StateNew(end, :);
-%             PlotCircle(Goal((Dim * (j - 1)) + 1), Goal((Dim * (j - 1)) + 2), 1, GoalColors{j});
-% %             scatter(Goal((Dim * (j - 1)) + 1), Goal((Dim * (j - 1)) + 2), ...
-% %                 100, colors(j), 'filled', 'DisplayName', 'Goal')
+% % %         [time, StateNew] = KinematicCar(current(1), current(2), ...
+% % %             current(3), Controls(i + 1,:), Durations(i + 1));
+% % %         current = StateNew(end, :);
+% %             PlotCircle(Goal((Dim * (j - 1)) + 1), Goal((Dim * (j - 1)) + 2), 1, GoalColors{j});
+% % %             scatter(Goal((Dim * (j - 1)) + 1), Goal((Dim * (j - 1)) + 2), ...
+% % %                 100, colors(j), 'filled', 'DisplayName', 'Goal')
             scatter(Start((Dim * (j - 1)) + 1), Start((Dim * (j - 1)) + 2), ...
                 100, colors(j), 'filled', 'DisplayName', 'Start')
-            current = [Xpos(1, j), Ypos(1, j), THpos(1, j)];
-        
+% %             current = [Xpos(1, j), Ypos(1, j), THpos(1, j)];
+% %         
             [time, StateNew] = KinematicCar(Xpos(i, j), Ypos(i, j), ...
                 THpos(i, j), ...
                 Controls(i + 1, NumCtrls*(j - 1) + 1: NumCtrls*(j - 1) + 2), ...
@@ -141,7 +141,7 @@ elseif NumVs == 2
 %     title("Two Vehicles: 1st Order Kinematic Cars", 'FontSize', 16)
     xlabel("x-position", 'FontSize', 16)
     ylabel("y-position", 'FontSize', 16)
-%     axis equal;
+    axis equal;
 %     grid on;
 else
     disp("No implimentation of current requested set-up");

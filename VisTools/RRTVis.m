@@ -2,7 +2,7 @@
 
 clear all; close all; clc;
 
-WorldFilePath = "/Users/Kotti/Desktop/MAPS-RRT/txt/world2agents.txt";
+WorldFilePath = "/Users/Kotti/Desktop/MAPS-RRT/txt/RSS_World.txt";
 [Dim, NumVs, NumCtrls, Bndry, Obs, Start, Goal] = readWorld(WorldFilePath);
 
 
@@ -14,7 +14,7 @@ SolFilePath = "/Users/Kotti/Desktop/MAPS-RRT/txt/path.txt";
 % [Xpos, Ypos, THpos, Controls, Durations] = ...
 %     readPath(SolFilePath, Dim, NumCtrls, NumVs);
 
-tolerance = 0.5;
+tolerance = 1.0;
 
 
 [nPoints, ~] = size(Xpos);
@@ -71,7 +71,7 @@ elseif NumVs == 2
                 Costs(i + 1));  % its costs because i want the same function
             % to be compatible with both scripts
             plot(StateNew(:, 1), StateNew(:, 2), 'Color', colors(j));
-            scatter(Xpos(i, j), Ypos(i, j), colors(j));
+%             scatter(Xpos(i, j), Ypos(i, j), colors(j));
         end
     end
     [nCols, ~] = size(Obs);
