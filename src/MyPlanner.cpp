@@ -100,6 +100,9 @@ ompl::control::MAPSRRT::MAPSRRT(const ompl::control::SpaceInformationPtr &si,
 
     Planner::declareParam<double>("goal_bias", this, &MAPSRRT::setGoalBias, &MAPSRRT::getGoalBias, "0.:.05:1.");
     Planner::declareParam<bool>("intermediate_states", this, &MAPSRRT::setIntermediateStates, &MAPSRRT::getIntermediateStates);
+
+    addPlannerProgressProperty("best cost REAL", [this] { return FinalCostProperty(); });
+
 }
 
 ompl::control::MAPSRRT::~MAPSRRT()
@@ -1466,7 +1469,9 @@ ompl::base::PlannerStatus ompl::control::MAPSRRT::solve(const base::PlannerTermi
             }
             else
             {
+                // the root node does not have a parent
                 path->append(mpath[i]->state, mpath[i]->GetCost());
+                FinalCost_ = mpath[i]->GetCost();
                 // path->append(mpath[i]->state);
             }
         solved = true;
@@ -1501,6 +1506,7 @@ ompl::base::PlannerStatus ompl::control::MAPSRRT::solve(const base::PlannerTermi
     // To see the error from exact sol to sol found
     OMPL_INFORM("%s: Solution Error was %f", getName().c_str(), approxdif);
     OMPL_INFORM("%s: amount of time spent segmentating was %f", getName().c_str(), (time_ * 0.000001));
+    OMPL_INFORM("%s: Solution can explained in %i segment(s)", getName().c_str(), FinalCost_);
     return base::PlannerStatus(solved, approximate);
 }
 

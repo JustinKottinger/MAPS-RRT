@@ -290,6 +290,9 @@ namespace ompl
             /** \brief The most recent goal motion.  Used for PlannerData computation */
             Motion *lastGoalMotion_{nullptr};
 
+            // the final cost
+            int FinalCost_{0};
+
             // the goal vector
             std::vector<double> g;
 
@@ -302,6 +305,11 @@ namespace ompl
             double time_;
 
             bool benchmark_;
+
+            std::string FinalCostProperty() const
+            {
+                return std::to_string(FinalCost_);
+            }
         };
     }
 }
