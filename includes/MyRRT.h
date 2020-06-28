@@ -45,7 +45,6 @@ namespace ob = ompl::base;
 namespace oc = ompl::control;
 namespace bg = boost::geometry;
 
-
 typedef boost::array< double , 6 > state_type;
 typedef bg::model::point<double, 2, bg::cs::cartesian> Point;
 typedef boost::geometry::model::segment<Point> Segment;
@@ -73,14 +72,13 @@ namespace ompl
         */
 
         /** \brief Rapidly-exploring Random Tree */
-        class RRTplus : public base::Planner
+        class MyRRT : public base::Planner
         {
         public:
             /** \brief Constructor */
-            RRTplus(const SpaceInformationPtr &si, std::vector<double> goal, int NumVehicles,
-                int NumControls, double radius);
+            MyRRT(const SpaceInformationPtr &si);
 
-            ~RRTplus() override;
+            ~MyRRT() override;
 
             /** \brief Continue solving for some amount of time. Return true if solution was found. */
             base::PlannerStatus solve(const base::PlannerTerminationCondition &ptc) override;
@@ -179,22 +177,9 @@ namespace ompl
                 return si_->distance(a->state, b->state);
             }
 
-            void overrideStates(const std::vector<int> DoNotProp, const base::State *source, 
-                base::State *result, Control *control);
+            void PostProcess(Motion *lastmotion);
 
-            unsigned int propagateWhileValid(Motion *motion,const base::State *state, 
-                Control *control, int steps, base::State *result, 
-                const std::vector<int> DoNotProgogate);
-
-            int MultiAgentControlSampler(Motion *motion,Control *RandCtrl, Control *previous, 
-                const base::State *source, base::State *dest);
-
-            std::vector<double> TwoVehicleDistance(const base::State *st);
-
-            void PostProcess(Motion *LastMotion);
-
-            std::vector<bool> PostProcess2DProject(const Motion *motion, 
-                int depth);
+            std::vector<bool> PostProcess2DProject(const Motion *motion, int depth);
 
             /** \brief State sampler */
             base::StateSamplerPtr sampler_;
@@ -221,16 +206,8 @@ namespace ompl
             /** \brief The most recent goal motion.  Used for PlannerData computation */
             Motion *lastGoalMotion_{nullptr};
 
-            // the goal as a vector
-            std::vector<double> g;
-
-            //  for the propogation functions
-            int NumVs;
-            int NumCs;
-            double radius_;
-            int numControlSamples_ = 1;
             double SegmentTime_ = 0;
-            int FinalCost_{0};
+            int FinalCost_ = 0;
 
             std::string FinalCostProperty() const
             {
@@ -240,7 +217,6 @@ namespace ompl
             {
                 return std::to_string(SegmentTime_);
             }
-
         };
     }
 }
