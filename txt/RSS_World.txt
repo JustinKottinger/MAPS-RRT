@@ -3,7 +3,7 @@ Dimension 3
 NumVehicles 2
 NumControls 2
 Data x1 y1 theta1 x2 y2 theta2 control1 control2 control1 control2 duration
-boundary -1 -1 -0.5233 15 12 1.5233
+boundary -1 -1 -0.5233 15 11 1.5233
 obstacle 4 0 -0.5233 4 2 1.5233
 obstacle 4 4 -0.5233 4 6 1.5233
 obstacle 10 2 -0.5233 2 2 1.5233
