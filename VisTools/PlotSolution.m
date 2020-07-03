@@ -56,50 +56,56 @@ if NumVs == 1
     
     
 elseif NumVs == 2
-    colors = ['r', 'b'];
-    GoalColors = {[1 0.75 0.75], [0.75 0.75 1]};
     NumSegs = Costs(1);
-    figure(NumSegs);
-    PlotCircle(Goal, NumVs, Dim, tolerance, GoalColors)
-    xlim([Bndry(1), Bndry(4)])
-    ylim([Bndry(2), Bndry(5)])
-    box on;
-%     p = uipanel('Parent', f, 'Units', 'normal', 'Position', ...
-%         [0.05 0.05 0.9 0.9], 'bordertype', 'line', 'HighLightColor', [0 0 0]);
-%     ax = axes('Parent', p, 'Units', 'normal', 'OuterPosition', ...
-%         [0 0 1 1]);
+    colors = ['r', 'b'];
+    fig = 1;
+    plotEntirePath(fig, colors, Start, Goal, NumVs, Dim, tolerance, Xpos, Ypos, THpos, Controls, NumCtrls, Durations, Obs, Costs, Bndry)
     hold on;
-    for i = 1 : nPoints-1
-        if Costs(i + 1) < NumSegs
-            [nCols, ~] = size(Obs);
-            nObs = nCols / 6;  % obstacle is defined by 6 points
-            for j = 1 : nObs - 1  % minus one because we started with 6 zeros
-                rectangle('Position',[Obs((6 * j) + 1, 1) Obs((6 * j) + 2, 1) ...
+    beginTime = 0;
+    currTime = 0;
+    for i = 1 : nPoints -1
+        [nCols, ~] = size(Obs);
+        nObs = nCols / 6;  % obstacle is defined by 6 points
+        for j = 1 : nObs - 1  % minus one because we started with 6 zeros
+            rectangle('Position',[Obs((6 * j) + 1, 1) Obs((6 * j) + 2, 1) ...
                               Obs((6 * j) + 4, 1) Obs((6 * j) + 5, 1)], ...
                           'FaceColor', "black")
-            end
-            h = zeros(5, 1);
-            h(1) = plot(NaN,NaN,'r');
-            h(2) = plot(NaN,NaN,'b');
-            h(3) = plot(NaN,NaN,'ok', 'MarkerFaceColor',[1 1 1]);
-            h(4) = plot(NaN, NaN, 'or', 'MarkerFaceColor',[1 0 0]);
-            h(5) = plot(NaN, NaN, 'ob', 'MarkerFaceColor',[0 0 1]); 
-%             legend(h, 'Vehicle 1 Path','Vehicle 2 Path','Start', ...
-%                 'Vehicle 1 Goal', 'Vehicle 2 Goal', 'FontSize', 12, 'Location', 'Best');
-%             title("Two Vehicles: 1st Order Kinematic Cars", 'FontSize', 12)
-            %     legend(["Start", "Goal", "Vehicle 1 Path", "Vehicle 2 Path"], 'Location', 'Best', 'FontSize', 14)
-            xlabel("x-position", 'FontSize', 16)
-            ylabel("y-position", 'FontSize', 16)
-            axis equal;
-%             grid on;
-            NumSegs = NumSegs - 1;
-            figure(NumSegs);
-            PlotCircle(Goal, NumVs, Dim, tolerance, GoalColors)
-            hold on;
-            box on;
-            xlim([Bndry(1), Bndry(4)])
-            ylim([Bndry(2), Bndry(5)])     
         end
+%         if Costs(i + 1) < NumSegs
+% %             [nCols, ~] = size(Obs);
+% %             nObs = nCols / 6;  % obstacle is defined by 6 points
+% %             for j = 1 : nObs - 1  % minus one because we started with 6 zeros
+% %                 rectangle('Position',[Obs((6 * j) + 1, 1) Obs((6 * j) + 2, 1) ...
+% %                               Obs((6 * j) + 4, 1) Obs((6 * j) + 5, 1)], ...
+% %                           'FaceColor', "black")
+% %             end
+% %             h = zeros(5, 1);
+% %             h(1) = plot(NaN,NaN,'r');
+% %             h(2) = plot(NaN,NaN,'b');
+% %             h(3) = plot(NaN,NaN,'ok', 'MarkerFaceColor',[1 1 1]);
+% %             h(4) = plot(NaN, NaN, 'or', 'MarkerFaceColor',[1 0 0]);
+% %             h(5) = plot(NaN, NaN, 'ob', 'MarkerFaceColor',[0 0 1]); 
+% %             legend(h, 'Vehicle 1 Path','Vehicle 2 Path','Start', ...
+% %                 'Vehicle 1 Goal', 'Vehicle 2 Goal', 'FontSize', 12, 'Location', 'Best');
+% %             title("Two Vehicles: 1st Order Kinematic Cars", 'FontSize', 12)
+%             %     legend(["Start", "Goal", "Vehicle 1 Path", "Vehicle 2 Path"], 'Location', 'Best', 'FontSize', 14)
+% %             xlabel("x-position", 'FontSize', 16)
+% %             ylabel("y-position", 'FontSize', 16)
+% %             axis equal;
+% %             grid on;
+%             duration = [beginTime, currTime];
+%             title("Time Period = [" + sprintf('%.1f',duration(1)) + ", " ...
+%                 + sprintf('%.1f',duration(2)) + "] seconds", 'FontSize', 14)
+%             NumSegs = NumSegs - 1;
+%             beginTime = currTime;
+%             fig = fig + 1;
+%             plotEntirePath(fig, colors, Start, Goal, NumVs, Dim, tolerance, Xpos, Ypos, THpos, Controls, NumCtrls, Durations, Obs, Costs, Bndry)
+% %             PlotCircle(Goal, NumVs, Dim, tolerance, GoalColors)
+% %             hold on;
+% %             box on;
+% %             xlim([Bndry(1), Bndry(4)])
+% %             ylim([Bndry(2), Bndry(5)])     
+%         end
         for j = 1 : NumVs
 % % %         [time, StateNew] = KinematicCar(current(1), current(2), ...
 % % %             current(3), Controls(i + 1,:), Durations(i + 1));
@@ -115,24 +121,32 @@ elseif NumVs == 2
                 THpos(i, j), ...
                 Controls(i + 1, NumCtrls*(j - 1) + 1: NumCtrls*(j - 1) + 2), ...
                 Durations(i + 1));
-            plot(StateNew(:, 1), StateNew(:, 2), 'Color', colors(j), 'LineWidth', 2);
+            p1 = plot(StateNew(:, 1), StateNew(:, 2), 'Color', colors(j), 'LineWidth', 2);
+%             for p=1:length(StateNew(:, 1))
+%                 draw_rectangle([StateNew(p, 1), StateNew(p, 2)], 0.2, 0.2, ...
+%                     StateNew(p, 3),colors(j));
+%             end
 %             scatter(Xpos(i, j), Ypos(i, j), colors(j));
         end
+    currTime = currTime + Durations(i + 1);
     end
-    [nCols, ~] = size(Obs);
-    nObs = nCols / 6;  % obstacle is defined by 6 points
-    for j = 1 : nObs - 1  % minus one because we started with 6 zeros
-        rectangle('Position',[Obs((6 * j) + 1, 1) Obs((6 * j) + 2, 1) ...
-                              Obs((6 * j) + 4, 1) Obs((6 * j) + 5, 1)], ...
-                          'FaceColor', "black")
-    end
-    h = zeros(6, 1);
-    h(1) = plot(NaN,NaN,'or', 'MarkerFaceColor',[1 0 0]);
-    h(2) = plot(NaN, NaN, 'ob', 'MarkerFaceColor',[0 0 1]);
-    h(3) = plot(NaN,NaN,'r');
-    h(4) = plot(NaN,NaN,'b');
-    h(5) = plot(NaN, NaN, '--r', 'MarkerFaceColor',[1 0 0]);
-    h(6) = plot(NaN, NaN, '--b', 'MarkerFaceColor',[0 0 1]); 
+    duration = [beginTime, currTime];
+    title("Time Period = [" + sprintf('%.1f',duration(1)) + ", " ...
+                + sprintf('%.1f',duration(2)) + "] seconds", 'FontSize', 14)
+%     [nCols, ~] = size(Obs);
+%     nObs = nCols / 6;  % obstacle is defined by 6 points
+%     for j = 1 : nObs - 1  % minus one because we started with 6 zeros
+%         rectangle('Position',[Obs((6 * j) + 1, 1) Obs((6 * j) + 2, 1) ...
+%                               Obs((6 * j) + 4, 1) Obs((6 * j) + 5, 1)], ...
+%                           'FaceColor', "black")
+%     end
+%     h = zeros(6, 1);
+%     h(1) = plot(NaN,NaN,'or', 'MarkerFaceColor',[1 0 0]);
+%     h(2) = plot(NaN, NaN, 'ob', 'MarkerFaceColor',[0 0 1]);
+%     h(3) = plot(NaN,NaN,'r');
+%     h(4) = plot(NaN,NaN,'b');
+%     h(5) = plot(NaN, NaN, '--r', 'MarkerFaceColor',[1 0 0]);
+%     h(6) = plot(NaN, NaN, '--b', 'MarkerFaceColor',[0 0 1]); 
 %     legend(h, 'Vehicle 1 Start', 'Vehicle 2 Start', ...
 %         'Vehicle 1 Path', 'Vehicle 2 Path', ...
 %         'Vehicle 1 Goal', 'Vehicle 2 Goal', 'FontSize', 12, 'Location', 'Best');
@@ -142,11 +156,75 @@ elseif NumVs == 2
     xlabel("x-position", 'FontSize', 16)
     ylabel("y-position", 'FontSize', 16)
     axis equal;
-%     grid on;
 else
     disp("No implimentation of current requested set-up");
 end
 
+
+
+
+
+
+% video loop
+
+% colors = ['r', 'b'];
+% GoalColors = {[1 0.75 0.75], [0.75 0.75 1]};
+% NumSegs = Costs(1);
+% figure(NumSegs);
+% %     imshow(processo(:,:,1,i))
+% PlotCircle(Goal, NumVs, Dim, tolerance, GoalColors)
+% xlim([Bndry(1), Bndry(4)])
+% ylim([Bndry(2), Bndry(5)])
+% xlabel("x-position", 'FontSize', 16)
+% ylabel("y-position", 'FontSize', 16)
+% axis equal;
+% box on;
+% hold on;
+% for i = 1 : nPoints - 1
+%     [nCols, ~] = size(Obs);
+%     nObs = nCols / 6;  % obstacle is defined by 6 points
+%     for j = 1 : nObs - 1  % minus one because we started with 6 zeros
+%         rectangle('Position',[Obs((6 * j) + 1, 1) Obs((6 * j) + 2, 1) ...
+%             Obs((6 * j) + 4, 1) Obs((6 * j) + 5, 1)], ...
+%             'FaceColor', "black")
+%     end
+%     states = {length(NumVs)};
+%     for j = 1 : NumVs
+%         scatter(Start((Dim * (j - 1)) + 1), Start((Dim * (j - 1)) + 2), ...
+%                 100, colors(j), 'filled', 'DisplayName', 'Start')
+%         [time, StateNew] = KinematicCar(Xpos(i, j), Ypos(i, j), ...
+%                 THpos(i, j), ...
+%                 Controls(i + 1, NumCtrls*(j - 1) + 1: NumCtrls*(j - 1) + 2), ...
+%                 Durations(i + 1));
+%         states{j} = StateNew;
+%     end
+%     % now we have both vehicles, need to plot them
+%     % plot v1 first
+% %     for t = 1 : length(states{1}(:, 1))
+% %         hplot1 = draw_rectangle([states{1}(t, 1), states{1}(t, 2)], 0.2, 0.2, ...
+% %             states{1}(t, 3),colors(1));
+% %         hplot2 = draw_rectangle([states{2}(t, 1), states{2}(t, 2)], 0.2, 0.2, ...
+% %             states{2}(t, 3),colors(2));
+% %         F(i) = getframe(gcf);
+% %         drawnow;
+% %         delete(hplot1);
+% %         delete(hplot2);
+% %     end
+% end
+% % create the video writer with 10 fps
+% writerObj = VideoWriter('myVideo.avi');
+% writerObj.FrameRate = 1;
+% % set the seconds per image
+% % open the video writer
+% open(writerObj);
+% % write the frames to the video
+% for i=1:length(F)
+%     % convert the image to a frame
+%     frame = F(i) ;    
+%     writeVideo(writerObj, frame);
+% end
+% % close the writer object
+% close(writerObj);
 
 
 
