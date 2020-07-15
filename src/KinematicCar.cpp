@@ -40,7 +40,7 @@ std::vector<polygon> TwoKinematicCarsModel::GetPolygons()
 
     // note that for some reason, boost rotation is not conventional to counter clockwise = positive angle
     // to counter this, I use a negative angle
-    trans::rotate_transformer<bg::radian, double, 2, 2>rotate1(-(rot1_->value));
+    trans::rotate_transformer<bg::radian, double, 2, 2>rotate1((rot1_->value));
 
     boost::geometry::transform(BackR1, BackR1, rotate1);
     boost::geometry::transform(BackL1, BackL1, rotate1);
@@ -78,7 +78,7 @@ std::vector<polygon> TwoKinematicCarsModel::GetPolygons()
     // point B1 = [+0.5l, -0.5w]
     point FrontR2( (0.5 * carLength_), (-0.5 * carWidth_));
 
-    trans::rotate_transformer<bg::radian, double, 2, 2>rotate2(-(rot2_->value));
+    trans::rotate_transformer<bg::radian, double, 2, 2>rotate2((rot2_->value));
 
     boost::geometry::transform(BackR2, BackR2, rotate2);
     boost::geometry::transform(BackL2, BackL2, rotate2);
@@ -96,11 +96,11 @@ std::vector<polygon> TwoKinematicCarsModel::GetPolygons()
     // create instance of polygon
     polygon v2;
     // // add the outer points to the shape
-    v2.outer().push_back(BackR1);
-    v2.outer().push_back(BackL1);
-    v2.outer().push_back(FrontL1);
-    v2.outer().push_back(FrontR1);
-    v2.outer().push_back(BackR1);
+    v2.outer().push_back(BackR2);
+    v2.outer().push_back(BackL2);
+    v2.outer().push_back(FrontL2);
+    v2.outer().push_back(FrontR2);
+    v2.outer().push_back(BackR2);
 
     Vehicles.push_back(v2);
 

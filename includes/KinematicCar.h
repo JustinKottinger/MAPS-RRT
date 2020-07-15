@@ -34,7 +34,7 @@ typedef boost::array< double , 6 > state_type;
 class TwoKinematicCarsModel
 {
     public:
-        TwoKinematicCarsModel(ob::State *state)
+        TwoKinematicCarsModel(const ob::State *state)
         {
             // get the compound space
             cs_ = state->as<ompl::base::CompoundStateSpace::StateType>();

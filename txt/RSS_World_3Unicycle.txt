@@ -1,0 +1,13 @@
+DynModel 3Unicycle
+Dimension 4
+NumVehicles 3
+NumControls 2
+Data x1 y1 v1 theta1 x2 y2 v2 theta2 x3 y3 v3 theta3 control1 control2 control1 control2 control1 control2 duration
+boundary -1 -1 -1 -0.5233 14 10 1 1.5233
+obstacle 4 0 -0.5233 4 2 1.5233
+obstacle 4 4 -0.5233 4 2 1.5233
+obstacle 10 6 -0.5233 2 2 1.5233
+obstacle 10 2 -0.5233 2 2 1.5233
+obstacle 4 6.5 -0.5233 4 3.5 1.5233
+start 1 9 0 0 3 9 0 0 13 9 0 0
+goal 13 9 0 0 13 1 0 0 1 9 0 0

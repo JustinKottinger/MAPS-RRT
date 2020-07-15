@@ -14,7 +14,7 @@ SolFilePath = "/Users/Kotti/Desktop/MAPS-RRT/txt/path.txt";
 % [Xpos, Ypos, THpos, Controls, Durations] = ...
 %     readPath(SolFilePath, Dim, NumCtrls, NumVs);
 
-tolerance = 1.0;
+tolerance = 0.5;
 
 
 [nPoints, ~] = size(Xpos);

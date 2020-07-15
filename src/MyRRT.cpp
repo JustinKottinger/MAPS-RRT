@@ -139,6 +139,7 @@ ompl::base::PlannerStatus ompl::control::MyRRT::solve(const base::PlannerTermina
     if (!controlSampler_)
         controlSampler_ = siC_->allocDirectedControlSampler();
 
+
     OMPL_INFORM("%s: Starting planning with %u states already in datastructure", getName().c_str(), nn_->size());
 
     Motion *solution = nullptr;
@@ -158,12 +159,12 @@ ompl::base::PlannerStatus ompl::control::MyRRT::solve(const base::PlannerTermina
         else
             sampler_->sampleUniform(rstate);
 
+
         /* find closest state in the tree */
         Motion *nmotion = nn_->nearest(rmotion);
 
         /* sample a random control that attempts to go towards the random state, and also sample a control duration */
         unsigned int cd = controlSampler_->sampleTo(rctrl, nmotion->control, nmotion->state, rmotion->state);
-
         if (addIntermediateStates_)
         {
             // this code is contributed by Jennifer Barry
@@ -250,7 +251,7 @@ ompl::base::PlannerStatus ompl::control::MyRRT::solve(const base::PlannerTermina
     }
 
     auto start = std::chrono::steady_clock::now();
-    PostProcess(solution);
+    // PostProcess(solution);
     auto end = std::chrono::steady_clock::now();
     auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
     SegmentTime_ = (dur * 0.000001);  // convert microseconds to seconds
@@ -275,7 +276,7 @@ ompl::base::PlannerStatus ompl::control::MyRRT::solve(const base::PlannerTermina
             else
             {
                 path->append(mpath[i]->state);
-                FinalCost_ = mpath[i]->cost;
+                // FinalCost_ = mpath[i]->cost;
             }
         solved = true;
         pdef_->addSolutionPath(path, approximate, approxdif, getName());

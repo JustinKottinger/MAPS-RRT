@@ -1,4 +1,4 @@
-function [Dim, NumVs, NumCtrls, Bndry, Obs, Start, Goal] = readWorld(FilePath)
+function [Model, Dim, NumVs, NumCtrls, Bndry, Obs, Start, Goal] = readWorld(FilePath)
 world = fopen(FilePath);
 
 % obstacles (needs to be initialized here to nothing)
@@ -6,6 +6,7 @@ Obs = zeros(6,1);
 
 
 % 
+model = 'DynModel';
 dim = 'Dimension';
 NumVehicles = 'NumVehicles';
 NumControls = 'NumControls';
@@ -23,6 +24,7 @@ gol = 'goal';
 line1 = fgetl(world);
 while ischar(line1)
 %     initialize index of those keys
+    modelI = strfind(line1, model);
     dimI = strfind(line1, dim);
     VehI = strfind(line1, NumVehicles);
     ContI = strfind(line1, NumControls);
@@ -32,7 +34,9 @@ while ischar(line1)
     GolI = strfind(line1, gol);
 %  if the index is 1, then we are at the line containing the key
 %  if such event occurs, then we need to extract the relevant data
-    if dimI == 1
+    if modelI == 1
+        Model = sscanf(line1(modelI(1) + length(model):end), '%s');
+    elseif dimI == 1
         Dim = sscanf(line1(dimI(1) + length(dim):end), '%g');
         
     elseif VehI == 1

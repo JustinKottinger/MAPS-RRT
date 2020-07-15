@@ -80,7 +80,7 @@ namespace ompl
             /** \brief Constructor */
             MAPSRRTmotion(const ompl::control::SpaceInformationPtr &si, int NumVehicles, int NumControls,
                 int DimofEachVehicle, int MaxSegments, std::vector<double> goal, double radius, 
-                bool benchmark, unsigned int k = 1);
+                bool benchmark, std::string model, unsigned int k = 1);
 
             ~MAPSRRTmotion() override;
 
@@ -200,21 +200,55 @@ namespace ompl
             int MultiAgentControlSampler(Motion *motion, Control *RandCtrl, Control *previous, 
                 const base::State *source, base::State *dest);
 
-            std::vector<double> TwoVehicleDistance(const base::State *st);
+            std::vector<double> getDistance(const base::State *st);
+
+            std::vector<double> ThreeUnicycleDistance(const ob::State *st);
+
+            std::vector<double> ThreeLinearDistance(const base::State *st);
+
+            std::vector<double> TwoLinearDistance(const base::State *st);
+
+            std::vector<double> TwoKinDistance(const base::State *st);
 
             unsigned int propagateWhileValid(Motion *motion, const base::State *state, Control *control,
                 int steps, base::State *result, std::vector<int> DoNotProgogate);
 
             void overrideStates(const std::vector<int> NoPropogation, const base::State *s, 
                 base::State *r, Control *control);
+            
+            void OverrideKinCars(const std::vector<int> NoPropogation, const base::State *s, 
+                base::State *r, Control *control);
+
+            void OverrideLinCars(const std::vector<int> NoPropogation, const base::State *s, 
+                base::State *r, Control *control);
+
+            void OverrideUniCars(const std::vector<int> DoNotProp, const base::State *source, 
+                base::State *result, Control *control);
 
             std::vector<Point> MakeLinearPath(const base::State *result) const;
+
+            std::vector<Point> MakeUniPath(const base::State *result) const;
+
+            std::vector<Point> MakeKinPath(const base::State *result) const;
+            
+            std::vector<Point> MakeLinPath(const base::State *result) const;
+
 
             void FindTotalIntersections(Motion *motion);
             // bool
             int Project2D(Motion *motion);
 
+            int Project2D_3Vehicles(Motion *motion);
+
+            int Project2D_2Vehicles(Motion *motion);
+
             void Get2DimDistance(Motion *motion, const base::State *source, 
+                const base::State *result);
+
+            void Get2DimDist2KinCars(Motion *motion, const base::State *source, 
+                const base::State *result);
+
+            void Get2DimDist2LinCars(Motion *motion, const base::State *source, 
                 const base::State *result);
 
             unsigned int FindTotalPathCost(Motion *motion);
@@ -250,6 +284,7 @@ namespace ompl
             // const SpaceInformationPtr si_;
 
             // const SpaceInformationPtr Csi_;
+            std::string model_;
 
             // used for projections in the obs checking
             int NumVs;

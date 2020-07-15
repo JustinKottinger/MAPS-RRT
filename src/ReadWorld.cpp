@@ -96,7 +96,7 @@ void readFile(const char* filename, std::vector<double> &b, std::vector<double> 
 		}
 		else if (str == "boundary")
 		{
-			for (int i = 0; i<6; i++)
+			for (int i = 0; i<2*dimension; i++)
 			{
 				std::string strB;
 				fin >> strB;
@@ -140,7 +140,6 @@ void readFile(const char* filename, std::vector<double> &b, std::vector<double> 
 		}
 	}
 	fin.close();
-	
 	if (!bflg)
 		std::cout<<"No boundary is give"<< std::endl;
 	if (!gflg)

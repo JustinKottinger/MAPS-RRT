@@ -77,7 +77,7 @@ struct compare
 ompl::control::MAPSRRTmotion::MAPSRRTmotion(const ompl::control::SpaceInformationPtr &si, 
     int NumVehicles, int NumControls, int DimofEachVehicle,
     int MaxSegments, std::vector<double> goal, double radius, 
-    bool benchmark, unsigned int k) : base::Planner(si, "MAPS-RRT Motion"), numControlSamples_(k)
+    bool benchmark,  std::string model, unsigned int k) : base::Planner(si, "MAPS-RRT Motion"), numControlSamples_(k)
 {
     specs_.approximateSolutions = true;
     // get the address of the SpaceInformation
@@ -85,7 +85,7 @@ ompl::control::MAPSRRTmotion::MAPSRRTmotion(const ompl::control::SpaceInformatio
 
     MaxSegments_ = MaxSegments;
     benchmark_ = benchmark;
-
+    model_ = model;
     NumVs = NumVehicles;
     NumCs = NumControls;
     dim = DimofEachVehicle;
@@ -501,7 +501,100 @@ void ompl::control::MAPSRRTmotion::freeMemory()
 //     }
 //     return CurrMotion->GetCost();
 // }
-std::vector<double> ompl::control::MAPSRRTmotion::TwoVehicleDistance(const base::State *st)
+
+std::vector<double> ompl::control::MAPSRRTmotion::getDistance(const base::State *st)
+{
+    std::vector<double> distance;   
+    if (model_ == "2KinematicCars")
+        distance = TwoKinDistance(st);
+    else if (model_ == "2Linear")
+        distance = TwoLinearDistance(st);
+    else if (model_ == "3Linear")
+        distance = ThreeLinearDistance(st);
+    else if (model_ == "3Unicycle")
+        distance = ThreeUnicycleDistance(st);
+    else
+    {
+        std::cout << "Current Model Not Implemented." << std::endl;
+        exit(1);
+    }
+    return distance;
+}
+std::vector<double> ompl::control::MAPSRRTmotion::ThreeUnicycleDistance(const ob::State *st)
+{
+    
+    std::vector<double> distance;
+    auto cs_ = st->as<ompl::base::CompoundStateSpace::StateType>();
+    auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+    auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
+    auto xyState3_ = cs_->as<ob::RealVectorStateSpace::StateType>(4);
+
+    double deltax_v1 = pow((g[0] - xyState1_->values[0]), 2);
+    double deltay_v1 = pow((g[1] - xyState1_->values[1]), 2);
+    double deltax_v2 = pow((g[4] - xyState2_->values[0]), 2);
+    double deltay_v2 = pow((g[5] - xyState2_->values[1]), 2);
+    double deltax_v3 = pow((g[8] - xyState3_->values[0]), 2);
+    double deltay_v3 = pow((g[9] - xyState3_->values[1]), 2);
+
+    double d1 = sqrt(deltax_v1 + deltay_v1);
+    double d2 = sqrt(deltax_v2 + deltay_v2);
+    double d3 = sqrt(deltax_v3 + deltay_v3);
+
+    distance.push_back(d1);
+    distance.push_back(d2);
+    distance.push_back(d3);
+
+    return distance;
+}
+
+std::vector<double> ompl::control::MAPSRRTmotion::ThreeLinearDistance(const ob::State *st)
+{
+    std::vector<double> distance;
+    auto cs_ = st->as<ompl::base::CompoundStateSpace::StateType>();
+    auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+    auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(1);
+    auto xyState3_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
+
+    double deltax_v1 = pow((g[0] - xyState1_->values[0]), 2);
+    double deltay_v1 = pow((g[1] - xyState1_->values[1]), 2);
+    double deltax_v2 = pow((g[2] - xyState2_->values[0]), 2);
+    double deltay_v2 = pow((g[3] - xyState2_->values[1]), 2);
+    double deltax_v3 = pow((g[4] - xyState3_->values[0]), 2);
+    double deltay_v3 = pow((g[5] - xyState3_->values[1]), 2);
+
+    double d1 = sqrt(deltax_v1 + deltay_v1);
+    double d2 = sqrt(deltax_v2 + deltay_v2);
+    double d3 = sqrt(deltax_v3 + deltay_v3);
+
+    distance.push_back(d1);
+    distance.push_back(d2);
+    distance.push_back(d3);
+
+    return distance;
+}
+
+std::vector<double> ompl::control::MAPSRRTmotion::TwoLinearDistance(const ob::State *st)
+{
+    std::vector<double> distance;
+    auto cs_ = st->as<ompl::base::CompoundStateSpace::StateType>();
+    auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+    auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(1);
+
+    double deltax_v1 = pow((g[0] - xyState1_->values[0]), 2);
+    double deltay_v1 = pow((g[1] - xyState1_->values[1]), 2);
+    double deltax_v2 = pow((g[2] - xyState2_->values[0]), 2);
+    double deltay_v2 = pow((g[3] - xyState2_->values[1]), 2);
+
+    double d1 = sqrt(deltax_v1 + deltay_v1);
+    double d2 = sqrt(deltax_v2 + deltay_v2);
+
+    distance.push_back(d1);
+    distance.push_back(d2);
+
+    return distance;
+}
+
+std::vector<double> ompl::control::MAPSRRTmotion::TwoKinDistance(const ob::State *st)
 {
 	std::vector<double> distances;
 
@@ -541,7 +634,7 @@ int ompl::control::MAPSRRTmotion::MultiAgentControlSampler(Motion *motion,Contro
 	// define an instance of the goal region
 	// ob::GoalPtr goal (new MyArbitraryGoal(ss->getSpaceInformation(), gol, Radius));
 
-	std::vector<double> d = TwoVehicleDistance(source);
+	std::vector<double> d = getDistance(source);
 
 	for (int i = 0; i < NumVs; i++)
 	{
@@ -567,6 +660,7 @@ int ompl::control::MAPSRRTmotion::MultiAgentControlSampler(Motion *motion,Contro
     base::State *bestState = siC_->allocState();
 
     steps = propagateWhileValid(motion, source, RandCtrl, steps, bestState, NoPropNeeded);
+
 
     if (numControlSamples_ > 1)
     {
@@ -606,6 +700,122 @@ int ompl::control::MAPSRRTmotion::MultiAgentControlSampler(Motion *motion,Contro
 }
 
 void ompl::control::MAPSRRTmotion::overrideStates(const std::vector<int> DoNotProp, const base::State *source, 
+    base::State *result, Control *control)
+{
+    if (model_ == "2KinematicCars")
+        OverrideKinCars(DoNotProp, source, result, control);
+    else if ((model_ == "2Linear") || (model_ == "3Linear"))
+        OverrideLinCars(DoNotProp, source, result, control);
+    else if (model_ == "3Unicycle")
+        OverrideUniCars(DoNotProp, source, result, control);
+    else
+    {
+        std::cout << "Current Model Not Implemented." << std::endl;
+        exit(1);
+    }
+}
+
+void ompl::control::MAPSRRTmotion::OverrideUniCars(const std::vector<int> DoNotProp, const base::State *source, 
+    base::State *result, Control *control)
+{
+    // this function takes in a state and a list of vehicle indexes that do not need to be propogated
+    // it changes the state s.t. state propogation and controls are null for any vehicles in the goal
+    if (DoNotProp.size() > 0)
+    {
+        // this array has a list of vehicles that do not need to be progpogated
+        // we need to iterate through all of them
+
+        // get the entire compound state for result
+        ompl::base::CompoundStateSpace::StateType *destination = 
+            result->as<ompl::base::CompoundStateSpace::StateType>();
+
+        // get the entire compound state space for source
+        const ob::CompoundStateSpace::StateType *src = 
+            source->as<ob::CompoundStateSpace::StateType>();
+
+        double *cntrl = control->as<oc::RealVectorControlSpace::ControlType>()->values;
+
+        for (int i = 0; i < DoNotProp.size(); i++)
+        {
+            // overriding controls 
+            // indexing method: ControlDimension(vehicle) + ControlIndex
+            cntrl[NumCs*DoNotProp[i] + 0] = 0.0;
+            cntrl[NumCs*DoNotProp[i] + 1] = 0.0;
+
+            // next, make the source state the destination state for the indiv. vehicles
+            // indexing method: 2(vehicle) or 2(vehicle) + 1
+
+            // get the specific xy state of result 
+            ob::RealVectorStateSpace::StateType *xyDest = 
+                destination->as<ob::RealVectorStateSpace::StateType>(2*DoNotProp[i]);
+
+            // get the specific xy state of the source
+            const auto *SRCxyState = src->as<ob::RealVectorStateSpace::StateType>(2*DoNotProp[i]);
+
+            // get the specific orientation of result
+            ob::SO2StateSpace::StateType *rotd = destination->as<ob::SO2StateSpace::StateType>(2*DoNotProp[i] + 1);
+
+            // get the specific orientation of the source
+            const auto *rots = src->as<ob::SO2StateSpace::StateType>(2*DoNotProp[i] + 1);
+
+            // overriding the position state
+            xyDest->values[0] = SRCxyState->values[0];
+            xyDest->values[1] = SRCxyState->values[1];
+
+            // overriding the orientation
+            rotd->value = rots->value;
+
+        }
+    }
+}
+
+
+void ompl::control::MAPSRRTmotion::OverrideLinCars(const std::vector<int> DoNotProp, const base::State *source, 
+    base::State *result, Control *control)
+{
+    // this function takes in a state and a list of vehicle indexes that do not need to be propogated
+    // it changes the state s.t. state propogation and controls are null for any vehicles in the goal
+    if (DoNotProp.size() > 0)
+    {
+        // this array has a list of vehicles that do not need to be progpogated
+        // we need to iterate through all of them
+
+        // get the entire compound state for result
+        ompl::base::CompoundStateSpace::StateType *destination = 
+            result->as<ompl::base::CompoundStateSpace::StateType>();
+
+        // get the entire compound state space for source
+        const ob::CompoundStateSpace::StateType *src = 
+            source->as<ob::CompoundStateSpace::StateType>();
+
+        double *cntrl = control->as<oc::RealVectorControlSpace::ControlType>()->values;
+
+        for (int i = 0; i < DoNotProp.size(); i++)
+        {
+            // overriding controls 
+            // indexing method: ControlDimension(vehicle) + ControlIndex
+            cntrl[NumCs*DoNotProp[i] + 0] = 0.0;
+            cntrl[NumCs*DoNotProp[i] + 1] = 0.0;
+
+            // next, make the source state the destination state for the indiv. vehicles
+            // indexing method: 2(vehicle) or 2(vehicle) + 1
+
+            // get the specific xy state of result 
+            ob::RealVectorStateSpace::StateType *xyDest = 
+                destination->as<ob::RealVectorStateSpace::StateType>(DoNotProp[i]);
+
+            // get the specific xy state of the source
+            const auto *SRCxyState = src->as<ob::RealVectorStateSpace::StateType>(DoNotProp[i]);
+
+            // overriding the position state
+            xyDest->values[0] = SRCxyState->values[0];
+            xyDest->values[1] = SRCxyState->values[1];
+
+        }
+    }
+}
+
+void ompl::control::MAPSRRTmotion::OverrideKinCars(const std::vector<int> DoNotProp, const base::State *source, 
     base::State *result, Control *control)
 {
 	// this function takes in a state and a list of vehicle indexes that do not need to be propogated
@@ -658,8 +868,92 @@ void ompl::control::MAPSRRTmotion::overrideStates(const std::vector<int> DoNotPr
         }
     }
 }
+
+
+std::vector<Point> ompl::control::MAPSRRTmotion::MakeLinearPath(const base::State *st) const
+{
+    std::vector<Point> VehiclePoints;
+    if (model_ == "2KinematicCars")
+        VehiclePoints = MakeKinPath(st);
+    else if ((model_ == "2Linear") || (model_ == "3Linear"))
+        VehiclePoints = MakeLinPath(st);
+    else if (model_ == "3Unicycle")
+        VehiclePoints = MakeUniPath(st);
+    else
+    {
+        std::cout << "Current Model Not Implemented." << std::endl;
+        exit(1);
+    }
+    return VehiclePoints;
+}
+
 // std::vector<points>  [v1child, v2child]
-std::vector<Point> ompl::control::MAPSRRTmotion::MakeLinearPath(const base::State *result) const
+std::vector<Point> ompl::control::MAPSRRTmotion::MakeUniPath(const base::State *result) const
+{
+    //  this function will take in a source state and a result state
+    // it will return a line in the 2D plane from these states (projected onto 2D)
+    std::vector<Point> VehiclePoints;
+
+    // get the compound state of the result
+    const ompl::base::CompoundStateSpace::StateType *destination = 
+        result->as<ompl::base::CompoundStateSpace::StateType>();
+
+    for (int i = 0; i < NumVs; i++)
+    {
+        // get the xy point of the result per vehicle
+        const ob::RealVectorStateSpace::StateType *DESTxyState = 
+            destination->as<ob::RealVectorStateSpace::StateType>(2 * i);
+
+        auto r = DESTxyState->values;
+
+        // get the point for the vehicle state
+        point child(r[0], r[1]);
+
+        // generate a segement of those points per vehicle
+        VehiclePoints.push_back(child);
+
+    }
+
+    // this returns a list of lines from the source point to the result point for each vehicle
+    return VehiclePoints;
+}
+
+// std::vector<points>  [v1child, v2child]
+std::vector<Point> ompl::control::MAPSRRTmotion::MakeLinPath(const base::State *result) const
+{
+    //  this function will take in a source state and a result state
+    // it will return a line in the 2D plane from these states (projected onto 2D)
+    std::vector<Point> VehiclePoints;
+
+    // get the compound state of the result
+    const ompl::base::CompoundStateSpace::StateType *destination = 
+        result->as<ompl::base::CompoundStateSpace::StateType>();
+
+    for (int i = 0; i < NumVs; i++)
+    {
+        // get the xy point of the result per vehicle
+        const ob::RealVectorStateSpace::StateType *DESTxyState = 
+            destination->as<ob::RealVectorStateSpace::StateType>(i);
+
+        auto r = DESTxyState->values;
+
+        // get the point for the vehicle state
+        point child(r[0], r[1]);
+
+        // generate a segement of those points per vehicle
+        VehiclePoints.push_back(child);
+
+    }
+
+    // this returns a list of lines from the source point to the result point for each vehicle
+    return VehiclePoints;
+}
+
+
+
+
+// std::vector<points>  [v1child, v2child]
+std::vector<Point> ompl::control::MAPSRRTmotion::MakeKinPath(const base::State *result) const
 {
     //  this function will take in a source state and a result state
     // it will return a line in the 2D plane from these states (projected onto 2D)
@@ -684,11 +978,84 @@ std::vector<Point> ompl::control::MAPSRRTmotion::MakeLinearPath(const base::Stat
         VehiclePoints.push_back(child);
 
     }
+
     // this returns a list of lines from the source point to the result point for each vehicle
     return VehiclePoints;
 }
 
+// different from distance function above in that this function saves distances to the node
 void ompl::control::MAPSRRTmotion::Get2DimDistance(Motion *motion, const base::State *source, 
+    const base::State *result)
+{
+    if ((model_ == "2KinematicCars") || (model_ == "3Unicycle"))
+        Get2DimDist2KinCars(motion, source, result);
+    else if ((model_ == "2Linear") || (model_ == "3Linear"))
+        Get2DimDist2LinCars(motion, source, result);
+    else
+    {
+        std::cout << "Current Model Not Implemented." << std::endl;
+        exit(1);
+    }
+}
+
+void ompl::control::MAPSRRTmotion::Get2DimDist2LinCars(Motion *motion, const base::State *source, 
+    const base::State *result)
+{
+    // allocate the returnable -- [distance between ]
+    std::vector<double> AllVehicleDist;
+
+    // get the entire compound state for result
+    const ompl::base::CompoundStateSpace::StateType *destination = 
+        result->as<ompl::base::CompoundStateSpace::StateType>();
+
+    // get the entire compound state space for source
+    const ob::CompoundStateSpace::StateType *src = 
+        source->as<ob::CompoundStateSpace::StateType>();
+
+    for (int i = 0; i < NumVs; i++)
+    {
+        // get the xy point of the source
+        const ob::RealVectorStateSpace::StateType *SRCxyState = 
+            src->as<ob::RealVectorStateSpace::StateType>(i);
+
+        // get the xy point of the result per vehicle
+        const ob::RealVectorStateSpace::StateType *DESTxyState = 
+            destination->as<ob::RealVectorStateSpace::StateType>(i);
+
+        auto s = SRCxyState->values;
+
+        auto r = DESTxyState->values;
+
+        // get the point for the vehicle state
+        Point parent(s[0], s[1]);
+        Point child(r[0], r[1]);
+
+        double dist = bg::distance(parent, child);
+        AllVehicleDist.push_back(dist);
+    }
+
+    // at end of loop, AllVehicleDistance contains the linear distance between the source and result
+    // next, we add it to the existing distances that are there
+    if ((motion->AllVehicleDistance).size() == 0)
+    {
+        // std::cout << "here" << std::endl;
+        motion->AllVehicleDistance = AllVehicleDist;
+    }
+    else
+    {
+
+        for (int v = 0; v < NumVs; v++)
+        {
+            (motion->AllVehicleDistance)[v] = (motion->AllVehicleDistance)[v] + AllVehicleDist[v];
+        }
+    }
+}
+
+
+
+
+// different from distance function above in that this function saves distances to the node
+void ompl::control::MAPSRRTmotion::Get2DimDist2KinCars(Motion *motion, const base::State *source, 
     const base::State *result)
 {
     // allocate the returnable -- [distance between ]
@@ -847,8 +1214,306 @@ void ompl::control::MAPSRRTmotion::FindTotalIntersections(Motion *NewMotion)
         NewMotion->NumIntersections = ParentIntersections;
 }
 
-// bool
 int ompl::control::MAPSRRTmotion::Project2D(Motion *NewMotion)
+{
+    int intersects;
+    if (NumVs == 2)
+        intersects = Project2D_2Vehicles(NewMotion);
+    else if (NumVs == 3)
+        intersects = Project2D_3Vehicles(NewMotion);
+    else
+    {
+        std::cout << "Current Number of Vehicles Not Supported." << std::endl;
+        exit(1);
+    }
+    return intersects;
+}
+
+int ompl::control::MAPSRRTmotion::Project2D_3Vehicles(Motion *NewMotion)
+{
+    int NumIntersect = 0;
+
+    std::vector<Motion *> LocOfInt;
+
+    // get linear path of the current motion for each vehicle
+    std::vector<std::vector<Point>> NewPath = NewMotion->LinearPath;
+
+    // get the total distance traveled in the new motion [distv1, distv2, ...]
+    std::vector<double> NewMotionDist = NewMotion->AllVehicleDistance;
+
+    // all vehicle new motion source [v1src, v2src, ...]
+    std::vector<Point> AllVehicleSourcePosNew = NewPath.back();
+
+    // create segments for all vehicles[[list of segments for v1path], [list of segments for v2path]]
+    std::vector<std::vector<Segment>> AllVehicleNewMotionPath;
+
+    for (int v = 0; v < NumVs; v++)
+    {
+        std::vector<Segment> VehiclePath;
+        for (int j = 0; j < NewPath.size() - 1; j++)
+        {
+            Point parent = (NewPath[j][v]);
+
+            Point child = (NewPath[j + 1][v]);
+
+            Segment VSeg(parent, child);
+
+            VehiclePath.push_back(VSeg);
+        }
+        AllVehicleNewMotionPath.push_back(VehiclePath);
+    }
+
+
+    Motion *CurrMotion = NewMotion;
+
+    while (CurrMotion->parent != nullptr)
+    {
+        // current motion path
+        std::vector<std::vector<Point>> CurrPath = CurrMotion->LinearPath;
+
+        // current motion source point [v1src, v2src, ...]
+        std::vector<Point> AllVehicleSourcePosCurr = CurrPath.back();
+
+        // current motion distance traveled [distv1, distv2, ...]
+        std::vector<double> CurrMotionDist = CurrMotion->AllVehicleDistance;
+
+        // create segments for CurrMotion
+        std::vector<std::vector<Segment>> AllVehicleCurrMotionPath;
+        for (int v = 0; v < NumVs; v++)
+        {
+            std::vector<Segment> VehiclePath;
+            for (int j = 0; j < CurrPath.size() - 1; j++)
+            {
+                Point parent = (CurrPath[j][v]);
+
+                Point child = (CurrPath[j + 1][v]);
+
+                Segment VSeg(parent, child);
+
+                VehiclePath.push_back(VSeg);
+            }
+            AllVehicleCurrMotionPath.push_back(VehiclePath);
+        }
+
+        for (int v = 0; v < NumVs; v++)
+        {
+            // check if currmotion is close to new motion (opposing vehicles only)
+            // if on v1, we check against v2 and v3
+            if (v == 0)
+            {
+                // indexing is 0, 1, 2
+                // first, get distance between 0, 1 and check them
+                double SrcDistance = bg::distance(AllVehicleSourcePosNew[0], 
+                    AllVehicleSourcePosCurr[1]);
+
+                // next, get total distance traveled between 0, 1
+                double TotalDistanceTraveled = NewMotionDist[0] + CurrMotionDist[1];
+
+                // check to see if it is possible to intersect
+                if (SrcDistance < TotalDistanceTraveled)
+                {
+                    // std::cout << "here" << std::endl;
+                    // in this case, we need to check for intersection
+
+                    // now, we have some segments that need to be checked for intersection
+                    // this is done via a double for loop for 0, 1
+                    for (int v1 = 0; v1 < AllVehicleNewMotionPath[0].size(); v1++)
+                    {
+                        for (int v2 = 0; v2 < AllVehicleCurrMotionPath[1].size(); v2++)
+                        {
+  
+                            bool intersection = boost::geometry::intersects(AllVehicleNewMotionPath[0][v1], 
+                                AllVehicleCurrMotionPath[1][v2]);
+
+                            if (intersection)
+                            {
+                                NumIntersect += 1;
+                                LocOfInt.push_back(CurrMotion);
+                                // std::cout << "returning true" << std::endl;
+                                // return true;
+                            }
+                        }
+                    }
+                }
+                // next, get distance between 0, 2 and check them
+                SrcDistance = bg::distance(AllVehicleSourcePosNew[0], 
+                    AllVehicleSourcePosCurr[2]);
+
+                // next, get total distance traveled between 0, 1
+                TotalDistanceTraveled = NewMotionDist[0] + CurrMotionDist[2];
+
+                // check to see if it is possible to intersect
+                if (SrcDistance < TotalDistanceTraveled)
+                {
+                    // std::cout << "here" << std::endl;
+                    // in this case, we need to check for intersection
+
+                    // now, we have some segments that need to be checked for intersection
+                    // this is done via a double for loop for 0, 1
+                    for (int v1 = 0; v1 < AllVehicleNewMotionPath[0].size(); v1++)
+                    {
+                        for (int v2 = 0; v2 < AllVehicleCurrMotionPath[2].size(); v2++)
+                        {
+  
+                            bool intersection = boost::geometry::intersects(AllVehicleNewMotionPath[0][v1], 
+                                AllVehicleCurrMotionPath[2][v2]);
+
+                            if (intersection)
+                            {
+                                NumIntersect += 1;
+                                LocOfInt.push_back(CurrMotion);
+                                // std::cout << "returning true" << std::endl;
+                                // return true;
+                            }
+                        }
+                    }
+                }
+            }
+            // when checking vehicle two, we check currmotion vehicle 1
+            if (v == 1)
+            {
+                // this needs to check NewMotion V2 vs CurrMotion V1
+
+                // first, get distance between 1, 0
+                double SrcDistance = bg::distance(AllVehicleSourcePosNew[1], 
+                    AllVehicleSourcePosCurr[0]);
+
+                // next, get total distance traveled between the two vehicles
+                double TotalDistanceTraveled = NewMotionDist[1] + CurrMotionDist[0];
+
+                // check to see if it is possible to intersect
+                if (SrcDistance < TotalDistanceTraveled)
+                {
+                    // std::cout << "here" << std::endl;
+                    // in this case, we need to check for intersection
+                    // now, we have some segments that need to be checked for intersection
+                    // this is done via a double for loop
+                    for (int v2 = 0; v2 < AllVehicleNewMotionPath[1].size(); v2++)
+                    {
+                        for (int v1 = 0; v1 < AllVehicleCurrMotionPath[0].size(); v1++)
+                        {
+                            bool intersection = boost::geometry::intersects(AllVehicleNewMotionPath[1][v2], 
+                                AllVehicleCurrMotionPath[0][v1]);
+
+                            if (intersection)
+                            {
+                                NumIntersect += 1;
+                                LocOfInt.push_back(CurrMotion);
+                                // std::cout << "returning true" << std::endl;
+                                // return true;
+                            }
+                        }
+                    }
+                }
+                // next, get distance between 1, 2
+                SrcDistance = bg::distance(AllVehicleSourcePosNew[1], 
+                    AllVehicleSourcePosCurr[2]);
+
+                // next, get total distance traveled between the two vehicles
+                TotalDistanceTraveled = NewMotionDist[1] + CurrMotionDist[2];
+
+                // check to see if it is possible to intersect
+                if (SrcDistance < TotalDistanceTraveled)
+                {
+                    // std::cout << "here" << std::endl;
+                    // in this case, we need to check for intersection
+                    // now, we have some segments that need to be checked for intersection
+                    // this is done via a double for loop
+                    for (int v2 = 0; v2 < AllVehicleNewMotionPath[1].size(); v2++)
+                    {
+                        for (int v1 = 0; v1 < AllVehicleCurrMotionPath[2].size(); v1++)
+                        {
+                            bool intersection = boost::geometry::intersects(AllVehicleNewMotionPath[1][v2], 
+                                AllVehicleCurrMotionPath[2][v1]);
+
+                            if (intersection)
+                            {
+                                NumIntersect += 1;
+                                LocOfInt.push_back(CurrMotion);
+                                // std::cout << "returning true" << std::endl;
+                                // return true;
+                            }
+                        }
+                    }
+                }
+            }
+            //  NEED IF V==2 HERE
+            if (v == 2)
+            {
+                // this needs to check NewMotion V2 vs CurrMotion V1
+
+                // first, get distance between 2, 0
+                double SrcDistance = bg::distance(AllVehicleSourcePosNew[2], 
+                    AllVehicleSourcePosCurr[0]);
+
+                // next, get total distance traveled between the two vehicles
+                double TotalDistanceTraveled = NewMotionDist[2] + CurrMotionDist[0];
+
+                // check to see if it is possible to intersect
+                if (SrcDistance < TotalDistanceTraveled)
+                {
+                    // std::cout << "here" << std::endl;
+                    // in this case, we need to check for intersection
+                    // now, we have some segments that need to be checked for intersection
+                    // this is done via a double for loop
+                    for (int v2 = 0; v2 < AllVehicleNewMotionPath[2].size(); v2++)
+                    {
+                        for (int v1 = 0; v1 < AllVehicleCurrMotionPath[0].size(); v1++)
+                        {
+                            bool intersection = boost::geometry::intersects(AllVehicleNewMotionPath[2][v2], 
+                                AllVehicleCurrMotionPath[0][v1]);
+
+                            if (intersection)
+                            {
+                                NumIntersect += 1;
+                                LocOfInt.push_back(CurrMotion);
+                                // std::cout << "returning true" << std::endl;
+                                // return true;
+                            }
+                        }
+                    }
+                }
+                // next, get distance between 2, 1
+                SrcDistance = bg::distance(AllVehicleSourcePosNew[2], 
+                    AllVehicleSourcePosCurr[1]);
+
+                // next, get total distance traveled between the two vehicles
+                TotalDistanceTraveled = NewMotionDist[2] + CurrMotionDist[1];
+
+                // check to see if it is possible to intersect
+                if (SrcDistance < TotalDistanceTraveled)
+                {
+                    // std::cout << "here" << std::endl;
+                    // in this case, we need to check for intersection
+                    // now, we have some segments that need to be checked for intersection
+                    // this is done via a double for loop
+                    for (int v2 = 0; v2 < AllVehicleNewMotionPath[2].size(); v2++)
+                    {
+                        for (int v1 = 0; v1 < AllVehicleCurrMotionPath[1].size(); v1++)
+                        {
+                            bool intersection = boost::geometry::intersects(AllVehicleNewMotionPath[2][v2], 
+                                AllVehicleCurrMotionPath[1][v1]);
+
+                            if (intersection)
+                            {
+                                NumIntersect += 1;
+                                LocOfInt.push_back(CurrMotion);
+                                // std::cout << "returning true" << std::endl;
+                                // return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        CurrMotion = CurrMotion->parent;
+    }
+    NewMotion->LocationsOfIntersect = LocOfInt;
+    return NumIntersect;
+}
+
+
+int ompl::control::MAPSRRTmotion::Project2D_2Vehicles(Motion *NewMotion)
 {
     int NumIntersect = 0;
 
@@ -1293,7 +1958,6 @@ ompl::base::PlannerStatus ompl::control::MAPSRRTmotion::solve(const base::Planne
         // unsigned int cd = controlSampler_->sampleTo(rctrl, nmotion->control, nmotion->state, rmotion->state);
         // unsigned int cd = CntrlSampler.sampleToMAPS(rctrl, nmotion->control, nmotion->state, rmotion->state);
         unsigned int cd = MultiAgentControlSampler(rmotion, rctrl, nmotion->control, nmotion->state, rmotion->state);
-
         auto *motion = new Motion(siC_);
         // copy state and controls that were sampled into the motion
         si_->copyState(motion->state, rmotion->state);
