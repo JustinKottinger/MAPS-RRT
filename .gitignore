@@ -1,1 +1,6 @@
-txt/
+obj/
+Mozart_Makefile/
+Mac_Makefile/
+VisTools/solution/
+Planner
+Makefile
