@@ -840,7 +840,7 @@ int main(int /*argc*/, char ** /*argv*/)
     std::vector<double> obs;
     std::vector<double> strt;
 
-    readFile("txt/RSS_World_3Unicycle.txt", bndry, gol, obs, strt, DynModel, dim, NumVs, NumCs, data);
+    readFile("txt/RSS_World.txt", bndry, gol, obs, strt, DynModel, dim, NumVs, NumCs, data);
     
     double SolveTime;
     double Tollorance;

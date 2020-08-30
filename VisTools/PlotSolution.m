@@ -10,7 +10,7 @@ clear; clc; close all;
 
 % read in the world
 
-WorldFilePath = "/Users/Kotti/Desktop/MAPS-RRT/txt/RSS_World_3Unicycle.txt";
+WorldFilePath = "/Users/Kotti/Desktop/MAPS-RRT/txt/RSS_World.txt";
 [Model, Dim, NumVs, NumCtrls, Bndry, Obs, Start, Goal] = readWorld(WorldFilePath);
 % read in the Solution
 % 
@@ -20,7 +20,7 @@ SolFilePath = "/Users/Kotti/Desktop/MAPS-RRT/txt/path.txt";
 % 
 [nPoints, ~] = size(Xpos);
 
-tolerance = 0.5;
+tolerance = 1.0;
 
 if NumVs == 1
     figure(1);
