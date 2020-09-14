@@ -102,6 +102,7 @@ void readFile(const char* filename, std::vector<double> &b, std::vector<double> 
 				fin >> strB;
 				size_t len = strB.length();
 				b.push_back(atof(strB.c_str()));
+				// std::cout << b[i] << std::endl;
 			}
 			bflg = true;
 		}

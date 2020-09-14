@@ -3,14 +3,9 @@
 % Created: 27 March 2020
 clear; clc; close all;
 
-% specify the problem
-
-% dim = 3;
-% nCtrls = 2;
-
 % read in the world
 
-WorldFilePath = "/Users/Kotti/Desktop/MAPS-RRT/txt/RSS_World.txt";
+WorldFilePath = "/Users/Kotti/Desktop/MAPS-RRT/txt/RSS_World_Hard_3Linear.txt";
 [Model, Dim, NumVs, NumCtrls, Bndry, Obs, Start, Goal] = readWorld(WorldFilePath);
 % read in the Solution
 % 
@@ -67,13 +62,13 @@ elseif NumVs == 2 && Model == "2KinematicCars"
                               Obs((6 * j) + 4, 1) Obs((6 * j) + 5, 1)], ...
                           'FaceColor', "black")
         end
-        if Costs(i + 1) < NumSegs
+        if Costs(i + 1) ~= NumSegs
             duration = [beginTime, currTime];
             title("Time Period = [" + sprintf('%.1f',duration(1)) + ", " ...
                 + sprintf('%.1f',duration(2)) + "] seconds", 'FontSize', 14)
-            filename = "solution/seg" + num2str(NumSegs);
-            print(filename, '-dpng')
-            NumSegs = NumSegs - 1;
+%             filename = "solution/seg" + num2str(NumSegs);
+%             print(filename, '-dpng')
+            NumSegs = NumSegs + 1;
             beginTime = currTime;
             fig = fig + 1;
             plotEntirePath(fig, colors, Model, Start, Goal, NumVs, Dim, tolerance, Xpos, Ypos, Vpos, THpos, Controls, NumCtrls, Durations, Obs, Costs, Bndry)
@@ -97,8 +92,8 @@ elseif NumVs == 2 && Model == "2KinematicCars"
     xlabel("x-position", 'FontSize', 16)
     ylabel("y-position", 'FontSize', 16)
     axis equal;
-    filename = "solution/seg" + num2str(NumSegs);
-    print(filename, '-dpng')
+%     filename = "solution/seg" + num2str(NumSegs);
+%     print(filename, '-dpng')
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 elseif NumVs == 2 && Model == "2Linear"
     NumSegs = Costs(1);
@@ -145,7 +140,6 @@ elseif NumVs == 2 && Model == "2Linear"
 %     axis equal;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 elseif NumVs == 3 && Model == "3Linear"
-    tolerance = 0.5;
     NumSegs = Costs(1);
     colors = {[1, 0, 0], [0, 0, 1], [0, 0.5, 0]};
     fig = 1;
@@ -161,25 +155,25 @@ elseif NumVs == 3 && Model == "3Linear"
                               Obs((6 * j) + 4, 1) Obs((6 * j) + 5, 1)], ...
                           'FaceColor', "black")
         end
-        if Costs(i + 1) < NumSegs
+        if Costs(i + 1) ~= NumSegs
             duration = [beginTime, currTime];
             title("Time Period = [" + sprintf('%.1f',duration(1)) + ", " ...
                 + sprintf('%.1f',duration(2)) + "] seconds", 'FontSize', 14)
-            NumSegs = NumSegs - 1;
+            NumSegs = NumSegs + 1;   % add if cost -- subtract if motion
             beginTime = currTime;
             fig = fig + 1;
             plotEntirePath(fig, colors, Model, Start, Goal, NumVs, Dim, tolerance, Xpos, Ypos, Vpos, THpos, Controls, NumCtrls, Durations, Obs, Costs, Bndry)
         end
-        for j = 1 : NumVs
-
-            scatter(Start((Dim * (j - 1)) + 1), Start((Dim * (j - 1)) + 2), ...
-                100, colors{j}, 'filled', 'DisplayName', 'Start')
-     
-            [time, StateNew] = LinearCar(Xpos(i, j), Ypos(i, j), ...
-                Controls(i + 1, NumCtrls*(j - 1) + 1: NumCtrls*(j - 1) + 2), ...
-                Durations(i + 1));
-            p1 = plot(StateNew(:, 1), StateNew(:, 2), 'Color', colors{j}, 'LineWidth', 2);
-        end
+%         for j = 1 : NumVs
+% 
+%             scatter(Start((Dim * (j - 1)) + 1), Start((Dim * (j - 1)) + 2), ...
+%                 100, colors{j}, 'filled', 'DisplayName', 'Start')
+%      
+%             [time, StateNew] = LinearCar(Xpos(i, j), Ypos(i, j), ...
+%                 Controls(i + 1, NumCtrls*(j - 1) + 1: NumCtrls*(j - 1) + 2), ...
+%                 Durations(i + 1));
+%             p1 = plot(StateNew(:, 1), StateNew(:, 2), 'Color', colors{j}, 'LineWidth', 2);
+%         end
         currTime = currTime + Durations(i + 1);
     end
     duration = [beginTime, currTime];
@@ -187,7 +181,7 @@ elseif NumVs == 3 && Model == "3Linear"
                 + sprintf('%.1f',duration(2)) + "] seconds", 'FontSize', 14)
     xlabel("x-position", 'FontSize', 16)
     ylabel("y-position", 'FontSize', 16)
-    axis equal;
+%     axis equal;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 elseif NumVs == 3 && Model == "3Unicycle"
     tolerance = 1.0;
@@ -237,8 +231,8 @@ elseif NumVs == 3 && Model == "3Unicycle"
     xlabel("x-position", 'FontSize', 16)
     ylabel("y-position", 'FontSize', 16)
 %     axis equal;
-    filename = "solution/seg" + num2str(fig);
-    print(filename, '-dpng')
+%     filename = "solution/seg" + num2str(fig);
+%     print(filename, '-dpng')
 else
     disp("No implimentation of current requested set-up");
 end

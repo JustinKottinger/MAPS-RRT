@@ -934,249 +934,253 @@ int ompl::control::MAPSRRTcost::Project2D_3Vehicles(Motion *NewMotion)
 
 
     Motion *CurrMotion = NewMotion;
-
-    while (CurrMotion->parent != nullptr)
+    if (CurrMotion->parent)
     {
-        // current motion path
-        std::vector<std::vector<Point>> CurrPath = CurrMotion->LinearPath;
-
-        // current motion source point [v1src, v2src, ...]
-        std::vector<Point> AllVehicleSourcePosCurr = CurrPath.back();
-
-        // current motion distance traveled [distv1, distv2, ...]
-        std::vector<double> CurrMotionDist = CurrMotion->AllVehicleDistance;
-
-        // create segments for CurrMotion
-        std::vector<std::vector<Segment>> AllVehicleCurrMotionPath;
-        for (int v = 0; v < NumVs; v++)
-        {
-            std::vector<Segment> VehiclePath;
-            for (int j = 0; j < CurrPath.size() - 1; j++)
+        int CurrCost = CurrMotion->parent->cost;
+        
+        while (CurrMotion->parent && CurrMotion->parent->cost == CurrCost)
             {
-                Point parent = (CurrPath[j][v]);
-
-                Point child = (CurrPath[j + 1][v]);
-
-                Segment VSeg(parent, child);
-
-                VehiclePath.push_back(VSeg);
+                // current motion path
+                std::vector<std::vector<Point>> CurrPath = CurrMotion->LinearPath;
+    
+                // current motion source point [v1src, v2src, ...]
+                std::vector<Point> AllVehicleSourcePosCurr = CurrPath.back();
+    
+                // current motion distance traveled [distv1, distv2, ...]
+                std::vector<double> CurrMotionDist = CurrMotion->AllVehicleDistance;
+    
+                // create segments for CurrMotion
+                std::vector<std::vector<Segment>> AllVehicleCurrMotionPath;
+                for (int v = 0; v < NumVs; v++)
+                {
+                    std::vector<Segment> VehiclePath;
+                    for (int j = 0; j < CurrPath.size() - 1; j++)
+                    {
+                        Point parent = (CurrPath[j][v]);
+    
+                        Point child = (CurrPath[j + 1][v]);
+    
+                        Segment VSeg(parent, child);
+    
+                        VehiclePath.push_back(VSeg);
+                    }
+                    AllVehicleCurrMotionPath.push_back(VehiclePath);
+                }
+    
+                for (int v = 0; v < NumVs; v++)
+                {
+                    // check if currmotion is close to new motion (opposing vehicles only)
+                    // if on v1, we check against v2 and v3
+                    if (v == 0)
+                    {
+                        // indexing is 0, 1, 2
+                        // first, get distance between 0, 1 and check them
+                        double SrcDistance = bg::distance(AllVehicleSourcePosNew[0], 
+                            AllVehicleSourcePosCurr[1]);
+    
+                        // next, get total distance traveled between 0, 1
+                        double TotalDistanceTraveled = NewMotionDist[0] + CurrMotionDist[1];
+    
+                        // check to see if it is possible to intersect
+                        if (SrcDistance < TotalDistanceTraveled)
+                        {
+                            // std::cout << "here" << std::endl;
+                            // in this case, we need to check for intersection
+    
+                              // now, we have some segments that need to be checked for intersection
+                              // this is done via a double for loop for 0, 1
+                              for (int v1 = 0; v1 < AllVehicleNewMotionPath[0].size(); v1++)
+                              {
+                                  for (int v2 = 0; v2 < AllVehicleCurrMotionPath[1].size(); v2++)
+                                  {
+        
+                                    bool intersection = boost::geometry::intersects(AllVehicleNewMotionPath[0][v1], 
+                                        AllVehicleCurrMotionPath[1][v2]);
+    
+                                    if (intersection)
+                                    {
+                                        NumIntersect += 1;
+                                        LocOfInt.push_back(CurrMotion);
+                                        // std::cout << "returning true" << std::endl;
+                                        // return true;
+                                    }
+                                }
+                            }
+                        }
+                        // next, get distance between 0, 2 and check them
+                        SrcDistance = bg::distance(AllVehicleSourcePosNew[0], 
+                            AllVehicleSourcePosCurr[2]);
+    
+                        // next, get total distance traveled between 0, 1
+                        TotalDistanceTraveled = NewMotionDist[0] + CurrMotionDist[2];
+    
+                        // check to see if it is possible to intersect
+                        if (SrcDistance < TotalDistanceTraveled)
+                        {
+                            // std::cout << "here" << std::endl;
+                            // in this case, we need to check for intersection
+    
+                              // now, we have some segments that need to be checked for intersection
+                              // this is done via a double for loop for 0, 1
+                              for (int v1 = 0; v1 < AllVehicleNewMotionPath[0].size(); v1++)
+                              {
+                                  for (int v2 = 0; v2 < AllVehicleCurrMotionPath[2].size(); v2++)
+                                  {
+        
+                                    bool intersection = boost::geometry::intersects(AllVehicleNewMotionPath[0][v1], 
+                                        AllVehicleCurrMotionPath[2][v2]);
+    
+                                if (intersection)
+                                {
+                                    NumIntersect += 1;
+                                    LocOfInt.push_back(CurrMotion);
+                                    // std::cout << "returning true" << std::endl;
+                                    // return true;
+                                }
+                            }
+                        }
+                    }
+                }
+                // when checking vehicle two, we check currmotion vehicle 1
+                    if (v == 1)
+                    {
+                        // this needs to check NewMotion V2 vs CurrMotion V1
+    
+                        // first, get distance between 1, 0
+                        double SrcDistance = bg::distance(AllVehicleSourcePosNew[1], 
+                            AllVehicleSourcePosCurr[0]);
+    
+                        // next, get total distance traveled between the two vehicles
+                        double TotalDistanceTraveled = NewMotionDist[1] + CurrMotionDist[0];
+    
+                        // check to see if it is possible to intersect
+                        if (SrcDistance < TotalDistanceTraveled)
+                        {
+                            // std::cout << "here" << std::endl;
+                            // in this case, we need to check for intersection
+                            // now, we have some segments that need to be checked for intersection
+                            // this is done via a double for loop
+                            for (int v2 = 0; v2 < AllVehicleNewMotionPath[1].size(); v2++)
+                            {
+                                for (int v1 = 0; v1 < AllVehicleCurrMotionPath[0].size(); v1++)
+                                {
+                                    bool intersection = boost::geometry::intersects(AllVehicleNewMotionPath[1][v2], 
+                                        AllVehicleCurrMotionPath[0][v1]);
+    
+                                if (intersection)
+                                {
+                                    NumIntersect += 1;
+                                    LocOfInt.push_back(CurrMotion);
+                                    // std::cout << "returning true" << std::endl;
+                                    // return true;
+                                }
+                            }
+                        }
+                        }
+                        // next, get distance between 1, 2
+                        SrcDistance = bg::distance(AllVehicleSourcePosNew[1], 
+                            AllVehicleSourcePosCurr[2]);
+    
+                        // next, get total distance traveled between the two vehicles
+                        TotalDistanceTraveled = NewMotionDist[1] + CurrMotionDist[2];
+    
+                        // check to see if it is possible to intersect
+                        if (SrcDistance < TotalDistanceTraveled)
+                        {
+                            // std::cout << "here" << std::endl;
+                            // in this case, we need to check for intersection
+                            // now, we have some segments that need to be checked for intersection
+                            // this is done via a double for loop
+                            for (int v2 = 0; v2 < AllVehicleNewMotionPath[1].size(); v2++)
+                            {
+                                for (int v1 = 0; v1 < AllVehicleCurrMotionPath[2].size(); v1++)
+                                {
+                                    bool intersection = boost::geometry::intersects(AllVehicleNewMotionPath[1][v2], 
+                                        AllVehicleCurrMotionPath[2][v1]);
+    
+                                    if (intersection)
+                                    {
+                                        NumIntersect += 1;
+                                        LocOfInt.push_back(CurrMotion);
+                                        // std::cout << "returning true" << std::endl;
+                                        // return true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    //  NEED IF V==2 HERE
+                    if (v == 2)
+                    {
+                        // this needs to check NewMotion V2 vs CurrMotion V1
+    
+                        // first, get distance between 2, 0
+                        double SrcDistance = bg::distance(AllVehicleSourcePosNew[2], 
+                            AllVehicleSourcePosCurr[0]);
+    
+                        // next, get total distance traveled between the two vehicles
+                        double TotalDistanceTraveled = NewMotionDist[2] + CurrMotionDist[0];
+    
+                        // check to see if it is possible to intersect
+                        if (SrcDistance < TotalDistanceTraveled)
+                        {
+                            // std::cout << "here" << std::endl;
+                            // in this case, we need to check for intersection
+                            // now, we have some segments that need to be checked for intersection
+                            // this is done via a double for loop
+                            for (int v2 = 0; v2 < AllVehicleNewMotionPath[2].size(); v2++)
+                            {
+                                for (int v1 = 0; v1 < AllVehicleCurrMotionPath[0].size(); v1++)
+                                {
+                                    bool intersection = boost::geometry::intersects(AllVehicleNewMotionPath[2][v2], 
+                                        AllVehicleCurrMotionPath[0][v1]);
+    
+                                    if (intersection)
+                                    {
+                                        NumIntersect += 1;
+                                        LocOfInt.push_back(CurrMotion);
+                                        // std::cout << "returning true" << std::endl;
+                                        // return true;
+                                    }
+                                }
+                            }
+                        }
+                        // next, get distance between 2, 1
+                        SrcDistance = bg::distance(AllVehicleSourcePosNew[2], 
+                            AllVehicleSourcePosCurr[1]);
+    
+                        // next, get total distance traveled between the two vehicles
+                        TotalDistanceTraveled = NewMotionDist[2] + CurrMotionDist[1];
+    
+                        // check to see if it is possible to intersect
+                        if (SrcDistance < TotalDistanceTraveled)
+                        {
+                            // std::cout << "here" << std::endl;
+                            // in this case, we need to check for intersection
+                            // now, we have some segments that need to be checked for intersection
+                            // this is done via a double for loop
+                            for (int v2 = 0; v2 < AllVehicleNewMotionPath[2].size(); v2++)
+                            {
+                                for (int v1 = 0; v1 < AllVehicleCurrMotionPath[1].size(); v1++)
+                                {
+                                    bool intersection = boost::geometry::intersects(AllVehicleNewMotionPath[2][v2], 
+                                        AllVehicleCurrMotionPath[1][v1]);
+    
+                                if (intersection)
+                                {
+                                    NumIntersect += 1;
+                                    LocOfInt.push_back(CurrMotion);
+                                    // std::cout << "returning true" << std::endl;
+                                    // return true;
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            AllVehicleCurrMotionPath.push_back(VehiclePath);
+            CurrMotion = CurrMotion->parent;
         }
-
-        for (int v = 0; v < NumVs; v++)
-        {
-            // check if currmotion is close to new motion (opposing vehicles only)
-            // if on v1, we check against v2 and v3
-            if (v == 0)
-            {
-                // indexing is 0, 1, 2
-                // first, get distance between 0, 1 and check them
-                double SrcDistance = bg::distance(AllVehicleSourcePosNew[0], 
-                    AllVehicleSourcePosCurr[1]);
-
-                // next, get total distance traveled between 0, 1
-                double TotalDistanceTraveled = NewMotionDist[0] + CurrMotionDist[1];
-
-                // check to see if it is possible to intersect
-                if (SrcDistance < TotalDistanceTraveled)
-                {
-                    // std::cout << "here" << std::endl;
-                    // in this case, we need to check for intersection
-
-                    // now, we have some segments that need to be checked for intersection
-                    // this is done via a double for loop for 0, 1
-                    for (int v1 = 0; v1 < AllVehicleNewMotionPath[0].size(); v1++)
-                    {
-                        for (int v2 = 0; v2 < AllVehicleCurrMotionPath[1].size(); v2++)
-                        {
-  
-                            bool intersection = boost::geometry::intersects(AllVehicleNewMotionPath[0][v1], 
-                                AllVehicleCurrMotionPath[1][v2]);
-
-                            if (intersection)
-                            {
-                                NumIntersect += 1;
-                                LocOfInt.push_back(CurrMotion);
-                                // std::cout << "returning true" << std::endl;
-                                // return true;
-                            }
-                        }
-                    }
-                }
-                // next, get distance between 0, 2 and check them
-                SrcDistance = bg::distance(AllVehicleSourcePosNew[0], 
-                    AllVehicleSourcePosCurr[2]);
-
-                // next, get total distance traveled between 0, 1
-                TotalDistanceTraveled = NewMotionDist[0] + CurrMotionDist[2];
-
-                // check to see if it is possible to intersect
-                if (SrcDistance < TotalDistanceTraveled)
-                {
-                    // std::cout << "here" << std::endl;
-                    // in this case, we need to check for intersection
-
-                    // now, we have some segments that need to be checked for intersection
-                    // this is done via a double for loop for 0, 1
-                    for (int v1 = 0; v1 < AllVehicleNewMotionPath[0].size(); v1++)
-                    {
-                        for (int v2 = 0; v2 < AllVehicleCurrMotionPath[2].size(); v2++)
-                        {
-  
-                            bool intersection = boost::geometry::intersects(AllVehicleNewMotionPath[0][v1], 
-                                AllVehicleCurrMotionPath[2][v2]);
-
-                            if (intersection)
-                            {
-                                NumIntersect += 1;
-                                LocOfInt.push_back(CurrMotion);
-                                // std::cout << "returning true" << std::endl;
-                                // return true;
-                            }
-                        }
-                    }
-                }
-            }
-            // when checking vehicle two, we check currmotion vehicle 1
-            if (v == 1)
-            {
-                // this needs to check NewMotion V2 vs CurrMotion V1
-
-                // first, get distance between 1, 0
-                double SrcDistance = bg::distance(AllVehicleSourcePosNew[1], 
-                    AllVehicleSourcePosCurr[0]);
-
-                // next, get total distance traveled between the two vehicles
-                double TotalDistanceTraveled = NewMotionDist[1] + CurrMotionDist[0];
-
-                // check to see if it is possible to intersect
-                if (SrcDistance < TotalDistanceTraveled)
-                {
-                    // std::cout << "here" << std::endl;
-                    // in this case, we need to check for intersection
-                    // now, we have some segments that need to be checked for intersection
-                    // this is done via a double for loop
-                    for (int v2 = 0; v2 < AllVehicleNewMotionPath[1].size(); v2++)
-                    {
-                        for (int v1 = 0; v1 < AllVehicleCurrMotionPath[0].size(); v1++)
-                        {
-                            bool intersection = boost::geometry::intersects(AllVehicleNewMotionPath[1][v2], 
-                                AllVehicleCurrMotionPath[0][v1]);
-
-                            if (intersection)
-                            {
-                                NumIntersect += 1;
-                                LocOfInt.push_back(CurrMotion);
-                                // std::cout << "returning true" << std::endl;
-                                // return true;
-                            }
-                        }
-                    }
-                }
-                // next, get distance between 1, 2
-                SrcDistance = bg::distance(AllVehicleSourcePosNew[1], 
-                    AllVehicleSourcePosCurr[2]);
-
-                // next, get total distance traveled between the two vehicles
-                TotalDistanceTraveled = NewMotionDist[1] + CurrMotionDist[2];
-
-                // check to see if it is possible to intersect
-                if (SrcDistance < TotalDistanceTraveled)
-                {
-                    // std::cout << "here" << std::endl;
-                    // in this case, we need to check for intersection
-                    // now, we have some segments that need to be checked for intersection
-                    // this is done via a double for loop
-                    for (int v2 = 0; v2 < AllVehicleNewMotionPath[1].size(); v2++)
-                    {
-                        for (int v1 = 0; v1 < AllVehicleCurrMotionPath[2].size(); v1++)
-                        {
-                            bool intersection = boost::geometry::intersects(AllVehicleNewMotionPath[1][v2], 
-                                AllVehicleCurrMotionPath[2][v1]);
-
-                            if (intersection)
-                            {
-                                NumIntersect += 1;
-                                LocOfInt.push_back(CurrMotion);
-                                // std::cout << "returning true" << std::endl;
-                                // return true;
-                            }
-                        }
-                    }
-                }
-            }
-            //  NEED IF V==2 HERE
-            if (v == 2)
-            {
-                // this needs to check NewMotion V2 vs CurrMotion V1
-
-                // first, get distance between 2, 0
-                double SrcDistance = bg::distance(AllVehicleSourcePosNew[2], 
-                    AllVehicleSourcePosCurr[0]);
-
-                // next, get total distance traveled between the two vehicles
-                double TotalDistanceTraveled = NewMotionDist[2] + CurrMotionDist[0];
-
-                // check to see if it is possible to intersect
-                if (SrcDistance < TotalDistanceTraveled)
-                {
-                    // std::cout << "here" << std::endl;
-                    // in this case, we need to check for intersection
-                    // now, we have some segments that need to be checked for intersection
-                    // this is done via a double for loop
-                    for (int v2 = 0; v2 < AllVehicleNewMotionPath[2].size(); v2++)
-                    {
-                        for (int v1 = 0; v1 < AllVehicleCurrMotionPath[0].size(); v1++)
-                        {
-                            bool intersection = boost::geometry::intersects(AllVehicleNewMotionPath[2][v2], 
-                                AllVehicleCurrMotionPath[0][v1]);
-
-                            if (intersection)
-                            {
-                                NumIntersect += 1;
-                                LocOfInt.push_back(CurrMotion);
-                                // std::cout << "returning true" << std::endl;
-                                // return true;
-                            }
-                        }
-                    }
-                }
-                // next, get distance between 2, 1
-                SrcDistance = bg::distance(AllVehicleSourcePosNew[2], 
-                    AllVehicleSourcePosCurr[1]);
-
-                // next, get total distance traveled between the two vehicles
-                TotalDistanceTraveled = NewMotionDist[2] + CurrMotionDist[1];
-
-                // check to see if it is possible to intersect
-                if (SrcDistance < TotalDistanceTraveled)
-                {
-                    // std::cout << "here" << std::endl;
-                    // in this case, we need to check for intersection
-                    // now, we have some segments that need to be checked for intersection
-                    // this is done via a double for loop
-                    for (int v2 = 0; v2 < AllVehicleNewMotionPath[2].size(); v2++)
-                    {
-                        for (int v1 = 0; v1 < AllVehicleCurrMotionPath[1].size(); v1++)
-                        {
-                            bool intersection = boost::geometry::intersects(AllVehicleNewMotionPath[2][v2], 
-                                AllVehicleCurrMotionPath[1][v1]);
-
-                            if (intersection)
-                            {
-                                NumIntersect += 1;
-                                LocOfInt.push_back(CurrMotion);
-                                // std::cout << "returning true" << std::endl;
-                                // return true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        CurrMotion = CurrMotion->parent;
-    }
+    } 
     NewMotion->LocationsOfIntersect = LocOfInt;
     return NumIntersect;
 }
@@ -1566,14 +1570,12 @@ std::vector<bool> ompl::control::MAPSRRTcost::CheckSegmentation(Motion *motion, 
 ompl::base::PlannerStatus ompl::control::MAPSRRTcost::solve(const base::PlannerTerminationCondition &ptc)
 {
     checkValidity();
-
     base::Goal *goal = pdef_->getGoal().get();
     auto *goal_s = dynamic_cast<base::GoalSampleableRegion *>(goal);
 
     while (const base::State *st = pis_.nextStart())
     {
         auto *motion = new Motion(siC_);
-
         si_->copyState(motion->state, st);
         siC_->nullControl(motion->control);
         nn_->add(motion);
