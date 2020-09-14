@@ -2,7 +2,7 @@
 % this script is used to visualize benchmark results
 
 % Just enter all the information above the astrisk line
-% then, just run the script 
+% then, run the script 
 
 % the readlog function will extract all useful info about the planners
 % feel free to change this function to use that information as you please
@@ -11,20 +11,20 @@ clear all; close all; clc;
 
 % LogFile = "/Users/Kotti/Desktop/MAPS-RRT/benchmarking_results/RSS_World/AllPlannersWithCosts.log";
 
-LogFile = "/Users/Kotti/Desktop/MAPS-RRT/benchmarking_results/RSS_World/MAPS_Limit2Segments.log";
+LogFile = "/Users/Kotti/Desktop/MAPS-RRT/benchmarking_results/RSS_World_Hard/lim7/results_lim7_500.log";
 
 % "control_MAPS-RRT", 
 % Planners = ["control_MAPS-RRT", "control_MAPS-RRT Motion", "control_RRT", "control_RRTplus"];
-
-Planners = ["control_MAPS-RRT", "control_MAPS-RRT Motion"];
+% "control_MAPS-RRT Motion", 
+Planners = ["control_MAPS-RRT Motion", "control_MAPS-RRT Cost"];
 
 % Titles = ["MAPSRRT", "MAPSRRT Motion", "RRT", "RRTplus"];
+%  
+Titles = ["MAPSRRT Motion", "MAPSRRT Cost"];
 
-Titles = ["MAPSRRT", "MAPSRRT Motion"];
+NumRuns = 500;
 
-NumRuns = 100;
-
-MaxSolveTime = 60;
+MaxSolveTime = 100;
 % ***********************************************************************
 
 [Headers, data] = ReadLog(LogFile, Planners, NumRuns);
@@ -34,10 +34,11 @@ MaxSolveTime = 60;
 
 % extract that information
 
-% fun fact: the column "status" shows whether a correct solution was found
-% or not in the log files... 5 for fail, 6 for correct
+% the column "status" shows whether a correct solution was found
+% or not in the log files... 5 for fail, 6 for success
 
 CompTimes = zeros(NumRuns, length(Planners));
+CompTimes_success = cell(1, length(Planners));
 SegmentTimes = zeros(NumRuns, length(Planners));
 NumSolutions = [];
 Costs = zeros(NumRuns, length(Planners));
@@ -54,6 +55,7 @@ for p = 1:length(Planners)
                     NumFail = NumFail + 1;
                 elseif data{p}(i, h) == 6
                     NumSuccess = NumSuccess + 1;
+                    CompTimes_success{p}(end + 1) = data{p}(i, 7);
                 end
             end
             NumSolutions = [NumSolutions NumSuccess];
@@ -67,30 +69,31 @@ for p = 1:length(Planners)
     end
 end
 
-% SegmentTimes
-% Cost
-
-% AvgCosts = [];
-% for p = 1:length(Planners)
-%     AvgCosts = [AvgCosts mean(Costs(p, :))];
-% end
-
-% 
-% % now, just plot that data 
-% 
-Labels = {length(Titles)};
+Labels = cell(1, length(Titles));
 for i=1:length(Titles)
     Labels{i} = Titles(i);
+end
+
+CompTimes_array = [];
+max = 0;
+for i=1:length(Planners)
+   if length(CompTimes_success{i}) > max
+      max = length(CompTimes_success{i});
+      CompTimes_array = zeros(length(Planners), length(CompTimes_success{i})); 
+   end
+end
+
+% turn cell into matrix for plot
+for i=1:length(Planners)
+   CompTimes_array(i, 1:length(CompTimes_success{i})) = CompTimes_success{i};
 end
 
 % box plot of the computation times
 figure(1);
 hold on;
-boxplot((CompTimes + SegmentTimes), 'labels', {Labels})
-% xlabel('Planners', 'FontSize',14);
+boxplot((CompTimes + SegmentTimes), 'labels', {Labels})  %  Labels{1}
 ylabel('Time (s)', 'FontSize',14);
 title('Computation Time', 'FontSize',16);
-% ylim([0, MaxSolveTime])
 
 
 % bar plot for NumSolutions
@@ -99,14 +102,21 @@ figure(2);
 bar(X, NumSolutions);
 title('Number of Solutions Found', 'FontSize',16)
 ylim([0, NumRuns])
-
+ 
 figure(3);
 hold on;
-% , 'labels', {Labels}
-boxplot(Costs, 'labels', {Labels})
+boxplot(Costs, 'labels', {Labels})  %  Labels{1}
 % xlabel('Planners', 'FontSize',14);
 ylabel('Number of Segments', 'FontSize',14);
 title('Cost', 'FontSize',16);
+
+% box plot of the computation times
+figure(4);
+hold on;
+boxplot(CompTimes_array', 'labels', {Labels})  %   Labels{1}
+ylabel('Time (s)', 'FontSize',14);
+title('Computation Time Successful Trials', 'FontSize',16);
+
 
 
 

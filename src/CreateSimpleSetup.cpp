@@ -9,6 +9,7 @@
 
 // my includes
 #include "../includes/CreateSimpleSetup.h"
+#include "../includes/ReadWorld.h"
 #include "../includes/KinematicCar.h"
 #include "../includes/LinearCar.h"
 #include "../includes/Unicycle.h"
@@ -303,11 +304,12 @@ void CreateSimpleSetup(oc::SimpleSetupPtr& ss, std::vector<double> bndry,
 
         // set the bounds for the first vehicle 
         // they will be the same as vehicle 2 but adding this way is more intuitve
+        MyPrint(bndry);
         ob::RealVectorBounds boundsV1(2);
         boundsV1.setLow(0, bndry[0]); // x lower bound
-        boundsV1.setHigh(0, bndry[3]); // x upper bound
+        boundsV1.setHigh(0, bndry[2]); // x upper bound
         boundsV1.setLow(1, bndry[1]);  // y lower bound
-        boundsV1.setHigh(1, bndry[4]); //y upper bound
+        boundsV1.setHigh(1, bndry[3]); //y upper bound
         // set the bounds of this space 
         cs->as<ob::RealVectorStateSpace>(0)->setBounds(boundsV1);
 
@@ -315,18 +317,18 @@ void CreateSimpleSetup(oc::SimpleSetupPtr& ss, std::vector<double> bndry,
         // create another instance of the bounds
         ob::RealVectorBounds boundsV2(2);
         boundsV2.setLow(0, bndry[0]); // x lower bound
-        boundsV2.setHigh(0, bndry[3]); // x upper bound
+        boundsV2.setHigh(0, bndry[2]); // x upper bound
         boundsV2.setLow(1, bndry[1]);  // y lower bound
-        boundsV2.setHigh(1, bndry[4]); //y upper bound
+        boundsV2.setHigh(1, bndry[3]); //y upper bound
         // set the bounds of this space 
         cs->as<ob::RealVectorStateSpace>(1)->setBounds(boundsV2);
 
         // create another instance of the bounds
         ob::RealVectorBounds boundsV3(2);
         boundsV3.setLow(0, bndry[0]); // x lower bound
-        boundsV3.setHigh(0, bndry[3]); // x upper bound
+        boundsV3.setHigh(0, bndry[2]); // x upper bound
         boundsV3.setLow(1, bndry[1]);  // y lower bound
-        boundsV3.setHigh(1, bndry[4]); //y upper bound
+        boundsV3.setHigh(1, bndry[3]); //y upper bound
         // set the bounds of this space 
         cs->as<ob::RealVectorStateSpace>(2)->setBounds(boundsV3);
 
