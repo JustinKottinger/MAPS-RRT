@@ -35,6 +35,38 @@ void print(std::vector<std::string> const &vec)
 	std::cout << "" << std::endl;
 }
 
+int getSolutionCost()
+{
+	// read text file
+	std::string filename = "txt/path.txt";
+	std::ifstream fin (filename, std::ifstream::in);
+	if (!fin)
+	{
+		std::cout << "Could NOT open the file" << std::endl;
+		return 0;
+	}
+	int cost;
+	while (!fin.eof())
+	{
+		std::string str;
+		fin >> str;
+		try
+		{
+			cost = std::stoi(str);
+		}
+		catch (std::invalid_argument const &e)
+		{
+			continue;
+		}
+		catch (std::out_of_range const &e)
+		{
+			continue;
+		}
+	}
+
+	return cost;
+}
+
 // takes in a "world" file that includes info for workspace
 // this function reads in the information and fills the data into vectors
 void readFile(const char* filename, std::vector<double> &b, std::vector<double> &g, 

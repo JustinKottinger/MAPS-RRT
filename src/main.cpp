@@ -846,6 +846,40 @@ void benchmark(std::vector<double> bndry, std::vector<double> gol,
 
 }
 
+// AO_X(Planner, bndry, gol, obs, strt, DynModel, Tollorance, data, 
+//           NumVs, NumCs, dim, numRuns, bench);
+
+void AO_X(std::string planner, std::vector<double> bndry, std::vector<double> gol, 
+    std::vector<double> obs, std::vector<double> start, std::string model, 
+    const double Radius, std::vector<std::string> data, const int NumberofVehicles, 
+    const int NumberofControls, const int DimensionOfVehicle, 
+    int numRuns, bool benchmark)
+{
+  // set initial cost to infinity
+  // double MaxSegments = std::numeric_limits<double>::infinity();
+  int MaxSegments = 1000;
+
+  // set solve time
+  const double SolveTime = 60;
+
+  // run planner to get initial plan
+  plan(planner, bndry, gol, obs, start, model, SolveTime, Radius, data, 
+        NumberofVehicles, NumberofControls, DimensionOfVehicle, MaxSegments, benchmark);
+
+  // get the final cost and call it c
+  for (int i = 0; i < numRuns; i++)
+  {
+    int MaxSegments = getSolutionCost() - 1;
+
+    plan(planner, bndry, gol, obs, start, model, SolveTime, Radius, data, 
+        NumberofVehicles, NumberofControls, DimensionOfVehicle, MaxSegments, benchmark);
+    
+    // run planner for cost of c-1
+
+    // update get new cost and call it c. 
+  }
+}
+
 
 int main(int /*argc*/, char ** /*argv*/)
 {
@@ -854,10 +888,125 @@ int main(int /*argc*/, char ** /*argv*/)
     // Mutable section for running locally
     // ***********************************
 
+    std::cout << "OMPL version: " << OMPL_VERSION << std::endl;
+    // Define the multi-agent problem from world file
+    std::string Task;
+    std::string Planner;
+    std::string DynModel;
+    int dim;
+    int NumVs;
+    int NumCs;
+    std::vector<std::string> data;
+    std::vector<double> bndry;
+    std::vector<double> gol;
+    std::vector<double> obs;
+    std::vector<double> strt;
+
+    readFile("txt/RSS_World.txt", bndry, gol, obs, strt, DynModel, dim, NumVs, NumCs, data);
+    
+    double SolveTime;
+    double Tollorance;
+
+    // need to add this to read file eventually
+    int MaxSegments;
+
+    int NumberofBenchmarkRuns;
+
+
+    std::cout << "Would you like to plan with one planner or benchmark all planners?" << std::endl;
+    std::cout << "Choices: plan, or benchmark" << std::endl;
+    std::cin >> Task;
+
+    if (Task == "plan")
+    {
+      bool bench = false;
+
+      std::cout << "Enter the planner you wish to use." << std::endl;
+      std::cout << "Choices: AO-X, MAPSRRT, MAPSRRTmotion, MAPSRRTcost, RRT, or RRTplus" << std::endl;
+      std::cout << "Enter: ";
+      std::cin >> Planner;
+
+      if (Planner == "AO-X")
+      {
+        std::cout << "Enter the planner you wish to use." << std::endl;
+        std::cout << "Choices: MAPSRRT, MAPSRRTmotion, MAPSRRTcost, RRT, or RRTplus" << std::endl;
+        std::cout << "Enter: ";
+        std::cin >> Planner;
+
+        int numRuns;
+        std::cout << "Enter how many runs you would like to perform." << std::endl;
+        std::cout << "Note that the planner approaches true optimality as the number approaches infinity." << std::endl;
+        std::cout << "Enter: ";
+        std::cin >> numRuns;
+
+        std::cout << "Enter the radius of each vehicles goal region: ";
+        std::cin >> Tollorance;
+
+        AO_X(Planner, bndry, gol, obs, strt, DynModel, Tollorance, data, 
+          NumVs, NumCs, dim, numRuns, bench);
+      }
+
+      else if (Planner == "RRT" || Planner == "RRTplus")
+      {
+        MaxSegments = 1;
+        std::cout << "Enter the maximum solve time (seconds): ";
+        std::cin >> SolveTime;
+
+        std::cout << "Enter the radius of each vehicles goal region: ";
+        std::cin >> Tollorance;
+
+        plan(Planner, bndry, gol, obs, strt, DynModel, SolveTime, Tollorance, data, 
+        NumVs, NumCs, dim, MaxSegments, bench);
+      }
+      else
+      {
+        std::cout << "Enter the maximum number of segments (should be integer): ";
+        std::cin >> MaxSegments;
+        std::cout << "Enter the maximum solve time (seconds): ";
+        std::cin >> SolveTime;
+
+        std::cout << "Enter the radius of each vehicles goal region: ";
+        std::cin >> Tollorance;
+
+        plan(Planner, bndry, gol, obs, strt, DynModel, SolveTime, Tollorance, data, 
+        NumVs, NumCs, dim, MaxSegments, bench);
+      }
+    }
+
+    else if (Task == "benchmark")
+    {
+      bool bench = true;
+      
+      std::cout << "Enter number of planning runs (must be integer): ";
+      std::cin >> NumberofBenchmarkRuns;
+
+      std::cout << "Enter the maximum solve time (seconds): ";
+      std::cin >> SolveTime;
+
+      std::cout << "Enter the maximum number of segments for MAPS planners (should be integer): ";
+        std::cin >> MaxSegments;
+
+      std::cout << "Enter the radius of each vehicles goal region: ";
+      std::cin >> Tollorance;
+
+      const char* name = "results";
+
+      benchmark(bndry, gol, obs, strt, DynModel, SolveTime, Tollorance, data, NumVs, NumCs, dim, 
+        MaxSegments, bench, NumberofBenchmarkRuns, name);
+
+    }
+
+    else
+      std::cout << "No meaningful task selected... exiting.";
+
+    return 0;
+
+    // *******************************************
+    // Unmutable section for benchmarking remotely
+    // *******************************************
+
     // std::cout << "OMPL version: " << OMPL_VERSION << std::endl;
     // // Define the multi-agent problem from world file
-    // std::string Task;
-    // std::string Planner;
     // std::string DynModel;
     // int dim;
     // int NumVs;
@@ -870,106 +1019,19 @@ int main(int /*argc*/, char ** /*argv*/)
 
     // readFile("txt/RSS_World_Hard_3Linear.txt", bndry, gol, obs, strt, DynModel, dim, NumVs, NumCs, data);
     
-    // double SolveTime;
-    // double Tollorance;
+    // double SolveTime = 100;  // 10 minute planning time
+    // double Tollorance = 1.0;  // radius of 1 unit
 
-    // // need to add this to read file eventually
-    // int MaxSegments;
+    // int MaxSegments = 7;
 
-    // int NumberofBenchmarkRuns;
+    // int NumberofBenchmarkRuns = 500;
 
+    // bool bench = true;
 
-    // std::cout << "Would you like to plan with one planner or benchmark all planners?" << std::endl;
-    // std::cout << "Choices: plan, or benchmark" << std::endl;
-    // std::cin >> Task;
+    // const char* name = "results_unlimited_500";
 
-    // if (Task == "plan")
-    // {
-    //   bool bench = false;
-
-    //   std::cout << "Enter the planner you wish to use." << std::endl;
-    //   std::cout << "Choices: MAPSRRT, MAPSRRTmotion, MAPSRRTcost, RRT, or RRTplus" << std::endl;
-    //   std::cout << "Enter: ";
-    //   std::cin >> Planner;
-
-    //   std::cout << "Enter the maximum solve time (seconds): ";
-    //   std::cin >> SolveTime;
-
-    //   std::cout << "Enter the radius of each vehicles goal region: ";
-    //   std::cin >> Tollorance;
-
-    //   if (Planner == "RRT" || Planner == "RRTplus")
-    //     MaxSegments = 1;
-    //   else
-    //   {
-    //     std::cout << "Enter the maximum number of segments (should be integer): ";
-    //     std::cin >> MaxSegments;
-    //   }
-
-    
-    //   plan(Planner, bndry, gol, obs, strt, DynModel, SolveTime, Tollorance, data, 
-    //     NumVs, NumCs, dim, MaxSegments, bench);
-    // }
-
-    // else if (Task == "benchmark")
-    // {
-    //   bool bench = true;
-      
-    //   std::cout << "Enter number of planning runs (must be integer): ";
-    //   std::cin >> NumberofBenchmarkRuns;
-
-    //   std::cout << "Enter the maximum solve time (seconds): ";
-    //   std::cin >> SolveTime;
-
-    //   std::cout << "Enter the maximum number of segments for MAPS planners (should be integer): ";
-    //     std::cin >> MaxSegments;
-
-    //   std::cout << "Enter the radius of each vehicles goal region: ";
-    //   std::cin >> Tollorance;
-
-    //   const char* name = "results";
-
-    //   benchmark(bndry, gol, obs, strt, DynModel, SolveTime, Tollorance, data, NumVs, NumCs, dim, 
-    //     MaxSegments, bench, NumberofBenchmarkRuns, name);
-
-    // }
-
-    // else
-    //   std::cout << "No meaningful task selected... exiting.";
-
-    // return 0;
-
-    // *******************************************
-    // Unmutable section for benchmarking remotely
-    // *******************************************
-
-    std::cout << "OMPL version: " << OMPL_VERSION << std::endl;
-    // Define the multi-agent problem from world file
-    std::string DynModel;
-    int dim;
-    int NumVs;
-    int NumCs;
-    std::vector<std::string> data;
-    std::vector<double> bndry;
-    std::vector<double> gol;
-    std::vector<double> obs;
-    std::vector<double> strt;
-
-    readFile("txt/RSS_World_Hard_3Linear.txt", bndry, gol, obs, strt, DynModel, dim, NumVs, NumCs, data);
-    
-    double SolveTime = 100;  // 10 minute planning time
-    double Tollorance = 1.0;  // radius of 1 unit
-
-    int MaxSegments = 7;
-
-    int NumberofBenchmarkRuns = 500;
-
-    bool bench = true;
-
-    const char* name = "results_unlimited_500";
-
-    benchmark(bndry, gol, obs, strt, DynModel, SolveTime, Tollorance, data, NumVs, NumCs, dim, 
-      MaxSegments, bench, NumberofBenchmarkRuns, name);
+    // benchmark(bndry, gol, obs, strt, DynModel, SolveTime, Tollorance, data, NumVs, NumCs, dim, 
+    //   MaxSegments, bench, NumberofBenchmarkRuns, name);
 
     return 0;
 }
