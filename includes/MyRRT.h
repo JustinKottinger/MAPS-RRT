@@ -166,6 +166,11 @@ namespace ompl
                 Motion *parent{nullptr};
 
                 int cost{0};
+
+                int GetCost() const
+                {
+                    return cost;
+                }
             };
 
             /** \brief Free the memory allocated by this planner */

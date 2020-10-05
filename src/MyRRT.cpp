@@ -269,18 +269,35 @@ ompl::base::PlannerStatus ompl::control::MyRRT::solve(const base::PlannerTermina
         }
 
         /* set the solution path */
-        auto path(std::make_shared<PathControl>(si_));
+        auto path(std::make_shared<MAPSRRTPathControl>(si_));
         for (int i = mpath.size() - 1; i >= 0; --i)
             if (mpath[i]->parent)
-                path->append(mpath[i]->state, mpath[i]->control, mpath[i]->steps * siC_->getPropagationStepSize());
+                path->append(mpath[i]->state, mpath[i]->control, mpath[i]->steps * siC_->getPropagationStepSize(), mpath[i]->GetCost());
             else
             {
-                path->append(mpath[i]->state);
+                path->append(mpath[i]->state, mpath[i]->GetCost());
                 // FinalCost_ = mpath[i]->cost;
             }
         solved = true;
         pdef_->addSolutionPath(path, approximate, approxdif, getName());
+        std::ofstream PathFile;
+        PathFile.open("txt/path.txt");
+        if (PathFile.fail())
+        {
+          std::cerr << "ERROR: Could not open path.txt" << std::endl;
+          exit(1);
+        }
+        else
+        {
+          OMPL_INFORM("Writing solution to path.txt");
+          // PathFile << data << std::endl;
+          path->printAsMatrix(PathFile);
+          PathFile.close();
+          OMPL_INFORM("Computation completed successfully");
+          // path.print(std::cout);  // this prints out the solution
+        }
     }
+
 
     if (rmotion->state)
         si_->freeState(rmotion->state);

@@ -1,7 +1,7 @@
 /*********************************************************************
 * Software License Agreement (BSD License)
 *
-*  Copyright (c) 2008, Willow Garage, Inc.
+*  Copyright (c) 2015, Rutgers the State University of New Jersey, New Brunswick
 *  All rights reserved.
 *
 *  Redistribution and use in source and binary forms, with or without
@@ -14,7 +14,7 @@
 *     copyright notice, this list of conditions and the following
 *     disclaimer in the documentation and/or other materials provided
 *     with the distribution.
-*   * Neither the name of the Willow Garage nor the names of its
+*   * Neither the name of Rutgers University nor the names of its
 *     contributors may be used to endorse or promote products derived
 *     from this software without specific prior written permission.
 *
@@ -32,14 +32,22 @@
 *  POSSIBILITY OF SUCH DAMAGE.
 *********************************************************************/
 
-/* Author: Justin Kottinger */
+/* Authors: Zakary Littlefield */
 
-// #include "ompl/control/planners/rrt/RRT.h"
-#include "ompl/control/PathControl.h"
+// my includes
+#include "../includes/MAPS_SST.h"
+#include "../includes/ReadWorld.h"
+#include "../includes/KinematicCar.h"
+#include "../includes/MAPSRRTPathControl.h"
+#include <boost/numeric/odeint/integrate/integrate_const.hpp>
+#include "../includes/SimpleDirectedControlSamplerMAPS.h"
+
 #include "ompl/base/goals/GoalSampleableRegion.h"
+#include "ompl/base/objectives/MinimaxObjective.h"
+#include "ompl/base/objectives/MaximizeMinClearanceObjective.h"
+#include "ompl/base/objectives/PathLengthOptimizationObjective.h"
+#include "ompl/base/objectives/MechanicalWorkOptimizationObjective.h"
 #include "ompl/tools/config/SelfConfig.h"
-#include "ompl/base/spaces/SE2StateSpace.h"
-// std includes
 #include <limits>
 #include <chrono>
 #include <bits/stdc++.h>
@@ -49,40 +57,24 @@
 #include <vector>
 #include <algorithm>
 #include <typeinfo>
-// my includes
-#include "../includes/MyPlannerCost.h"
-#include "../includes/ReadWorld.h"
-#include "../includes/KinematicCar.h"
-#include "../includes/MAPSRRTPathControl.h"
-#include <boost/numeric/odeint/integrate/integrate_const.hpp>
-#include "../includes/SimpleDirectedControlSamplerMAPS.h"
+#include <string>
 
 
 using namespace boost::numeric::odeint;
 namespace bg = boost::geometry;
 
 
-struct compare
-{
-    int key;
-    compare(int const &i): key(i) { }
-
-    bool operator()(int const &i)
-    {
-        return (i == key);
-    }
-};
-
-
-// constructor
-ompl::control::MAPSRRTcost::MAPSRRTcost(const ompl::control::SpaceInformationPtr &si, 
+ompl::control::MAPSSST::MAPSSST(const SpaceInformationPtr &si, 
     int NumVehicles, int NumControls, int DimofEachVehicle,
     int MaxSegments, std::vector<double> goal, double radius, 
-    bool benchmark,  std::string model, unsigned int k, std::string solutionName) : base::Planner(si, "MAPS-RRT Cost"), numControlSamples_(k)
+    bool benchmark,  std::string model, unsigned int k, 
+    std::string solutionName) : base::Planner(si, "SST")
 {
     specs_.approximateSolutions = true;
-    // get the address of the SpaceInformation
     siC_ = si.get();
+    prevSolution_.clear();
+    prevSolutionControls_.clear();
+    prevSolutionSteps_.clear();
 
     MaxSegments_ = MaxSegments;
     benchmark_ = benchmark;
@@ -95,76 +87,110 @@ ompl::control::MAPSRRTcost::MAPSRRTcost(const ompl::control::SpaceInformationPtr
     radius_ = radius;
     SolName_ = solutionName;
 
-    Planner::declareParam<double>("goal_bias", this, &MAPSRRTcost::setGoalBias, &MAPSRRTcost::getGoalBias, "0.:.05:1.");
-    Planner::declareParam<bool>("intermediate_states", this, &MAPSRRTcost::setIntermediateStates, &MAPSRRTcost::getIntermediateStates);
-
-    addPlannerProgressProperty("best cost REAL", [this] { return FinalCostProperty(); });
-    addPlannerProgressProperty("segmenting time REAL", [this] { return FinalTimeProperty(); });
-
+    Planner::declareParam<double>("goal_bias", this, &MAPSSST::setGoalBias, &MAPSSST::getGoalBias, "0.:.05:1.");
+    Planner::declareParam<double>("selection_radius", this, &MAPSSST::setSelectionRadius, &MAPSSST::getSelectionRadius, "0.:.1:"
+                                                                                                                "100");
+    Planner::declareParam<double>("pruning_radius", this, &MAPSSST::setPruningRadius, &MAPSSST::getPruningRadius, "0.:.1:100");
 }
 
-ompl::control::MAPSRRTcost::~MAPSRRTcost()
+ompl::control::MAPSSST::~MAPSSST()
 {
     freeMemory();
 }
 
-
-void ompl::control::MAPSRRTcost::setup()
+void ompl::control::MAPSSST::setup()
 {
     base::Planner::setup();
-    // A nearest-neighbors datastructure containing the tree of motions
-    // if not - null (meaning there is a tree present already) we reset it
     if (!nn_)
         nn_.reset(tools::SelfConfig::getDefaultNearestNeighbors<Motion *>(this));
-    // next, we set the distance function of the tree
     nn_->setDistanceFunction([this](const Motion *a, const Motion *b)
                              {
                                  return distanceFunction(a, b);
                              });
-    // the planner is now set-up
+    if (!witnesses_)
+        witnesses_.reset(tools::SelfConfig::getDefaultNearestNeighbors<Motion *>(this));
+    witnesses_->setDistanceFunction([this](const Motion *a, const Motion *b)
+                                    {
+                                        return distanceFunction(a, b);
+                                    });
+
+    if (pdef_)
+    {
+        if (pdef_->hasOptimizationObjective())
+        {
+            opt_ = pdef_->getOptimizationObjective();
+            if (dynamic_cast<base::MaximizeMinClearanceObjective *>(opt_.get()) ||
+                dynamic_cast<base::MinimaxObjective *>(opt_.get()))
+                OMPL_WARN("%s: Asymptotic near-optimality has only been proven with Lipschitz continuous cost "
+                          "functions w.r.t. state and control. This optimization objective will result in undefined "
+                          "behavior",
+                          getName().c_str());
+        }
+        else
+        {
+            OMPL_WARN("%s: No optimization object set. Using path length", getName().c_str());
+            opt_ = std::make_shared<base::PathLengthOptimizationObjective>(si_);
+            pdef_->setOptimizationObjective(opt_);
+        }
+    }
+
+    prevSolutionCost_ = opt_->infiniteCost();
 }
 
-void ompl::control::MAPSRRTcost::clear()
+void ompl::control::MAPSSST::clear()
 {
-    // reset the planner and samplers
     Planner::clear();
     sampler_.reset();
     controlSampler_.reset();
-    // free the memory
     freeMemory();
-    // if the datastructure for motions exists, clear it to nothing
     if (nn_)
         nn_->clear();
-    // remove the information stored at the lastGoalMotion_ location
-    lastGoalMotion_ = nullptr;
+    if (witnesses_)
+        witnesses_->clear();
+    if (opt_)
+        prevSolutionCost_ = opt_->infiniteCost();
 }
 
-void ompl::control::MAPSRRTcost::freeMemory()
+void ompl::control::MAPSSST::freeMemory()
 {
-    // if the datastructer of motions exists
     if (nn_)
     {
-        // create a list of motions
         std::vector<Motion *> motions;
         nn_->list(motions);
-        // for all the motions stored in datastructure
         for (auto &motion : motions)
         {
-            // if the motion has a state, remove it
-            if (motion->state)
-                si_->freeState(motion->state);
-            // if the motion has a control, remove that also
-            if (motion->control)
-                siC_->freeControl(motion->control);
-            // delete the entire motion now that its contents are also cleared
-            // note that I think if one were to simply delete motion, the state and control
-            //      may linger in memory somewhere
+            if (motion->state_)
+                si_->freeState(motion->state_);
+            if (motion->control_)
+                siC_->freeControl(motion->control_);
             delete motion;
         }
     }
+    if (witnesses_)
+    {
+        std::vector<Motion *> witnesses;
+        witnesses_->list(witnesses);
+        for (auto &witness : witnesses)
+        {
+            delete witness;
+        }
+    }
+    for (auto &i : prevSolution_)
+    {
+        if (i)
+            si_->freeState(i);
+    }
+    prevSolution_.clear();
+    for (auto &prevSolutionControl : prevSolutionControls_)
+    {
+        if (prevSolutionControl)
+            siC_->freeControl(prevSolutionControl);
+    }
+    prevSolutionControls_.clear();
+    prevSolutionSteps_.clear();
 }
 
-std::vector<double> ompl::control::MAPSRRTcost::getDistance(const base::State *st)
+std::vector<double> ompl::control::MAPSSST::getDistance(const base::State *st)
 {
     std::vector<double> distance;   
     if (model_ == "2KinematicCars")
@@ -175,6 +201,8 @@ std::vector<double> ompl::control::MAPSRRTcost::getDistance(const base::State *s
         distance = ThreeLinearDistance(st);
     else if (model_ == "3Unicycle")
         distance = ThreeUnicycleDistance(st);
+    else if (model_ == "2Unicycle")
+        distance = TwoUnicycleDistance(st);
     else if (model_ == "3KinematicCars")
         distance = ThreeKinDistance(st);
     else
@@ -185,7 +213,7 @@ std::vector<double> ompl::control::MAPSRRTcost::getDistance(const base::State *s
     return distance;
 }
 
-std::vector<double> ompl::control::MAPSRRTcost::ThreeKinDistance(const ob::State *st)
+std::vector<double> ompl::control::MAPSSST::ThreeKinDistance(const ob::State *st)
 {
     
     std::vector<double> distance;
@@ -212,7 +240,30 @@ std::vector<double> ompl::control::MAPSRRTcost::ThreeKinDistance(const ob::State
     return distance;
 }
 
-std::vector<double> ompl::control::MAPSRRTcost::ThreeUnicycleDistance(const ob::State *st)
+std::vector<double> ompl::control::MAPSSST::TwoUnicycleDistance(const ob::State *st)
+{
+    
+    std::vector<double> distance;
+    auto cs_ = st->as<ompl::base::CompoundStateSpace::StateType>();
+    auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+    auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
+
+    double deltax_v1 = pow((g[0] - xyState1_->values[0]), 2);
+    double deltay_v1 = pow((g[1] - xyState1_->values[1]), 2);
+    double deltax_v2 = pow((g[4] - xyState2_->values[0]), 2);
+    double deltay_v2 = pow((g[5] - xyState2_->values[1]), 2);
+
+    double d1 = sqrt(deltax_v1 + deltay_v1);
+    double d2 = sqrt(deltax_v2 + deltay_v2);
+
+    distance.push_back(d1);
+    distance.push_back(d2);
+
+    return distance;
+}
+
+
+std::vector<double> ompl::control::MAPSSST::ThreeUnicycleDistance(const ob::State *st)
 {
     
     std::vector<double> distance;
@@ -239,7 +290,7 @@ std::vector<double> ompl::control::MAPSRRTcost::ThreeUnicycleDistance(const ob::
     return distance;
 }
 
-std::vector<double> ompl::control::MAPSRRTcost::ThreeLinearDistance(const ob::State *st)
+std::vector<double> ompl::control::MAPSSST::ThreeLinearDistance(const ob::State *st)
 {
     std::vector<double> distance;
     auto cs_ = st->as<ompl::base::CompoundStateSpace::StateType>();
@@ -265,7 +316,7 @@ std::vector<double> ompl::control::MAPSRRTcost::ThreeLinearDistance(const ob::St
     return distance;
 }
 
-std::vector<double> ompl::control::MAPSRRTcost::TwoLinearDistance(const ob::State *st)
+std::vector<double> ompl::control::MAPSSST::TwoLinearDistance(const ob::State *st)
 {
     std::vector<double> distance;
     auto cs_ = st->as<ompl::base::CompoundStateSpace::StateType>();
@@ -286,62 +337,63 @@ std::vector<double> ompl::control::MAPSRRTcost::TwoLinearDistance(const ob::Stat
     return distance;
 }
 
-std::vector<double> ompl::control::MAPSRRTcost::TwoKinDistance(const ob::State *st)
+std::vector<double> ompl::control::MAPSSST::TwoKinDistance(const ob::State *st)
 {
-	std::vector<double> distances;
+    std::vector<double> distances;
 
-	// extract the vector spaces of the vehicles
-	auto cs_ = st->as<ompl::base::CompoundStateSpace::StateType>();
-	auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
-	auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
+    // extract the vector spaces of the vehicles
+    auto cs_ = st->as<ompl::base::CompoundStateSpace::StateType>();
+    auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+    auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
 
-	// calculate the squared distance of each element for each vehicle
-	double deltax_v1 = pow((g[0] - xyState1_->values[0]), 2);
-	double deltay_v1 = pow((g[1] - xyState1_->values[1]), 2);
-	double deltax_v2 = pow((g[3] - xyState2_->values[0]), 2);
-	double deltay_v2 = pow((g[4] - xyState2_->values[1]), 2);
+    // calculate the squared distance of each element for each vehicle
+    double deltax_v1 = pow((g[0] - xyState1_->values[0]), 2);
+    double deltay_v1 = pow((g[1] - xyState1_->values[1]), 2);
+    double deltax_v2 = pow((g[3] - xyState2_->values[0]), 2);
+    double deltay_v2 = pow((g[4] - xyState2_->values[1]), 2);
 
-	// calculate true distance
-	double d1 = sqrt(deltax_v1 + deltay_v1);
-	double d2 = sqrt(deltax_v2 + deltay_v2);
+    // calculate true distance
+    double d1 = sqrt(deltax_v1 + deltay_v1);
+    double d2 = sqrt(deltax_v2 + deltay_v2);
 
-	distances.push_back(d1);
-	distances.push_back(d2);
-	return distances;
+    distances.push_back(d1);
+    distances.push_back(d2);
+    return distances;
 }
 
-int ompl::control::MAPSRRTcost::MultiAgentControlSampler(Motion *motion,Control *RandCtrl, Control *previous, 
-	const base::State *source, base::State *dest)
+
+int ompl::control::MAPSSST::MultiAgentControlSampler(Motion *motion,Control *RandCtrl, Control *previous, 
+    const base::State *source, base::State *dest)
 {
 
     // reset the path distance
     std::vector<double> MotionPathDistance;
     motion->AllVehicleDistance = MotionPathDistance;
 
-	auto cs_ = siC_->allocControlSampler();
+    auto cs_ = siC_->allocControlSampler();
 
-	std::vector<int> NoPropNeeded;
-	std::numeric_limits<double>::infinity();
+    std::vector<int> NoPropNeeded;
+    std::numeric_limits<double>::infinity();
 
-	// define an instance of the goal region
-	// ob::GoalPtr goal (new MyArbitraryGoal(ss->getSpaceInformation(), gol, Radius));
+    // define an instance of the goal region
+    // ob::GoalPtr goal (new MyArbitraryGoal(ss->getSpaceInformation(), gol, Radius));
 
-	std::vector<double> d = getDistance(source);
+    std::vector<double> d = getDistance(source);
 
-	for (int i = 0; i < NumVs; i++)
-	{
-		if (d[i] <= radius_)
-		{
-			NoPropNeeded.push_back(i);
-		}
-	}
+    for (int i = 0; i < NumVs; i++)
+    {
+        if (d[i] <= radius_)
+        {
+            NoPropNeeded.push_back(i);
+        }
+    }
 
-	// propogate as normal
+    // propogate as normal
     // Sample the first control
     if (previous != nullptr)
         cs_->sampleNext(RandCtrl, previous, source);
     else
-    	cs_->sample(RandCtrl, source);
+        cs_->sample(RandCtrl, source);
 
     const unsigned int minDuration = siC_->getMinControlDuration();
     const unsigned int maxDuration = siC_->getMaxControlDuration();
@@ -391,419 +443,7 @@ int ompl::control::MAPSRRTcost::MultiAgentControlSampler(Motion *motion,Control 
     return steps;
 }
 
-void ompl::control::MAPSRRTcost::overrideStates(const std::vector<int> DoNotProp, const base::State *source, 
-    base::State *result, Control *control)
-{
-    if (model_ == "2KinematicCars" || model_ == "3KinematicCars")
-        OverrideKinCars(DoNotProp, source, result, control);
-    else if ((model_ == "2Linear") || (model_ == "3Linear"))
-        OverrideLinCars(DoNotProp, source, result, control);
-    else if (model_ == "3Unicycle")
-        OverrideUniCars(DoNotProp, source, result, control);
-    else
-    {
-        std::cout << "Current Override States Model Not Implemented." << std::endl;
-        exit(1);
-    }
-}
-
-void ompl::control::MAPSRRTcost::OverrideUniCars(const std::vector<int> DoNotProp, const base::State *source, 
-    base::State *result, Control *control)
-{
-    // this function takes in a state and a list of vehicle indexes that do not need to be propogated
-    // it changes the state s.t. state propogation and controls are null for any vehicles in the goal
-    if (DoNotProp.size() > 0)
-    {
-        // this array has a list of vehicles that do not need to be progpogated
-        // we need to iterate through all of them
-
-        // get the entire compound state for result
-        ompl::base::CompoundStateSpace::StateType *destination = 
-            result->as<ompl::base::CompoundStateSpace::StateType>();
-
-        // get the entire compound state space for source
-        const ob::CompoundStateSpace::StateType *src = 
-            source->as<ob::CompoundStateSpace::StateType>();
-
-        double *cntrl = control->as<oc::RealVectorControlSpace::ControlType>()->values;
-
-        for (int i = 0; i < DoNotProp.size(); i++)
-        {
-            // overriding controls 
-            // indexing method: ControlDimension(vehicle) + ControlIndex
-            cntrl[NumCs*DoNotProp[i] + 0] = 0.0;
-            cntrl[NumCs*DoNotProp[i] + 1] = 0.0;
-
-            // next, make the source state the destination state for the indiv. vehicles
-            // indexing method: 2(vehicle) or 2(vehicle) + 1
-
-            // get the specific xy state of result 
-            ob::RealVectorStateSpace::StateType *xyDest = 
-                destination->as<ob::RealVectorStateSpace::StateType>(2*DoNotProp[i]);
-
-            // get the specific xy state of the source
-            const auto *SRCxyState = src->as<ob::RealVectorStateSpace::StateType>(2*DoNotProp[i]);
-
-            // get the specific orientation of result
-            ob::SO2StateSpace::StateType *rotd = destination->as<ob::SO2StateSpace::StateType>(2*DoNotProp[i] + 1);
-
-            // get the specific orientation of the source
-            const auto *rots = src->as<ob::SO2StateSpace::StateType>(2*DoNotProp[i] + 1);
-
-            // overriding the position state
-            xyDest->values[0] = SRCxyState->values[0];
-            xyDest->values[1] = SRCxyState->values[1];
-
-            // overriding the orientation
-            rotd->value = rots->value;
-
-        }
-    }
-}
-
-
-void ompl::control::MAPSRRTcost::OverrideLinCars(const std::vector<int> DoNotProp, const base::State *source, 
-    base::State *result, Control *control)
-{
-    // this function takes in a state and a list of vehicle indexes that do not need to be propogated
-    // it changes the state s.t. state propogation and controls are null for any vehicles in the goal
-    if (DoNotProp.size() > 0)
-    {
-        // this array has a list of vehicles that do not need to be progpogated
-        // we need to iterate through all of them
-
-        // get the entire compound state for result
-        ompl::base::CompoundStateSpace::StateType *destination = 
-            result->as<ompl::base::CompoundStateSpace::StateType>();
-
-        // get the entire compound state space for source
-        const ob::CompoundStateSpace::StateType *src = 
-            source->as<ob::CompoundStateSpace::StateType>();
-
-        double *cntrl = control->as<oc::RealVectorControlSpace::ControlType>()->values;
-
-        for (int i = 0; i < DoNotProp.size(); i++)
-        {
-            // overriding controls 
-            // indexing method: ControlDimension(vehicle) + ControlIndex
-            cntrl[NumCs*DoNotProp[i] + 0] = 0.0;
-            cntrl[NumCs*DoNotProp[i] + 1] = 0.0;
-
-            // next, make the source state the destination state for the indiv. vehicles
-            // indexing method: 2(vehicle) or 2(vehicle) + 1
-
-            // get the specific xy state of result 
-            ob::RealVectorStateSpace::StateType *xyDest = 
-                destination->as<ob::RealVectorStateSpace::StateType>(DoNotProp[i]);
-
-            // get the specific xy state of the source
-            const auto *SRCxyState = src->as<ob::RealVectorStateSpace::StateType>(DoNotProp[i]);
-
-            // overriding the position state
-            xyDest->values[0] = SRCxyState->values[0];
-            xyDest->values[1] = SRCxyState->values[1];
-
-        }
-    }
-}
-
-void ompl::control::MAPSRRTcost::OverrideKinCars(const std::vector<int> DoNotProp, const base::State *source, 
-    base::State *result, Control *control)
-{
-	// this function takes in a state and a list of vehicle indexes that do not need to be propogated
-    // it changes the state s.t. state propogation and controls are null for any vehicles in the goal
-    if (DoNotProp.size() > 0)
-    {
-        // this array has a list of vehicles that do not need to be progpogated
-        // we need to iterate through all of them
-
-        // get the entire compound state for result
-        ompl::base::CompoundStateSpace::StateType *destination = 
-            result->as<ompl::base::CompoundStateSpace::StateType>();
-
-        // get the entire compound state space for source
-        const ob::CompoundStateSpace::StateType *src = 
-            source->as<ob::CompoundStateSpace::StateType>();
-
-        double *cntrl = control->as<oc::RealVectorControlSpace::ControlType>()->values;
-
-        for (int i = 0; i < DoNotProp.size(); i++)
-        {
-            // overriding controls 
-            // indexing method: ControlDimension(vehicle) + ControlIndex
-            cntrl[NumCs*DoNotProp[i] + 0] = 0.0;
-            cntrl[NumCs*DoNotProp[i] + 1] = 0.0;
-
-            // next, make the source state the destination state for the indiv. vehicles
-            // indexing method: 2(vehicle) or 2(vehicle) + 1
-
-            // get the specific xy state of result 
-            ob::RealVectorStateSpace::StateType *xyDest = 
-                destination->as<ob::RealVectorStateSpace::StateType>(2*DoNotProp[i]);
-
-            // get the specific xy state of the source
-            const auto *SRCxyState = src->as<ob::RealVectorStateSpace::StateType>(2*DoNotProp[i]);
-
-            // get the specific orientation of result
-            ob::SO2StateSpace::StateType *rotd = destination->as<ob::SO2StateSpace::StateType>(2*DoNotProp[i] + 1);
-
-            // get the specific orientation of the source
-            const auto *rots = src->as<ob::SO2StateSpace::StateType>(2*DoNotProp[i] + 1);
-
-            // overriding the position state
-            xyDest->values[0] = SRCxyState->values[0];
-            xyDest->values[1] = SRCxyState->values[1];
-
-            // overriding the orientation
-            rotd->value = rots->value;
-
-        }
-    }
-}
-
-
-std::vector<Point> ompl::control::MAPSRRTcost::MakeLinearPath(const base::State *st) const
-{
-    std::vector<Point> VehiclePoints;
-    if (model_ == "2KinematicCars" || model_ == "3KinematicCars")
-        VehiclePoints = MakeKinPath(st);
-    else if ((model_ == "2Linear") || (model_ == "3Linear"))
-        VehiclePoints = MakeLinPath(st);
-    else if (model_ == "3Unicycle")
-        VehiclePoints = MakeUniPath(st);
-    else
-    {
-        std::cout << "Current Linear Path Model Not Implemented." << std::endl;
-        exit(1);
-    }
-    return VehiclePoints;
-}
-
-// std::vector<points>  [v1child, v2child]
-std::vector<Point> ompl::control::MAPSRRTcost::MakeUniPath(const base::State *result) const
-{
-    //  this function will take in a source state and a result state
-    // it will return a line in the 2D plane from these states (projected onto 2D)
-    std::vector<Point> VehiclePoints;
-
-    // get the compound state of the result
-    const ompl::base::CompoundStateSpace::StateType *destination = 
-        result->as<ompl::base::CompoundStateSpace::StateType>();
-
-    for (int i = 0; i < NumVs; i++)
-    {
-        // get the xy point of the result per vehicle
-        const ob::RealVectorStateSpace::StateType *DESTxyState = 
-            destination->as<ob::RealVectorStateSpace::StateType>(2 * i);
-
-        auto r = DESTxyState->values;
-
-        // get the point for the vehicle state
-        point child(r[0], r[1]);
-
-        // generate a segement of those points per vehicle
-        VehiclePoints.push_back(child);
-
-    }
-
-    // this returns a list of lines from the source point to the result point for each vehicle
-    return VehiclePoints;
-}
-
-// std::vector<points>  [v1child, v2child]
-std::vector<Point> ompl::control::MAPSRRTcost::MakeLinPath(const base::State *result) const
-{
-    //  this function will take in a source state and a result state
-    // it will return a line in the 2D plane from these states (projected onto 2D)
-    std::vector<Point> VehiclePoints;
-
-    // get the compound state of the result
-    const ompl::base::CompoundStateSpace::StateType *destination = 
-        result->as<ompl::base::CompoundStateSpace::StateType>();
-
-    for (int i = 0; i < NumVs; i++)
-    {
-        // get the xy point of the result per vehicle
-        const ob::RealVectorStateSpace::StateType *DESTxyState = 
-            destination->as<ob::RealVectorStateSpace::StateType>(i);
-
-        auto r = DESTxyState->values;
-
-        // get the point for the vehicle state
-        point child(r[0], r[1]);
-
-        // generate a segement of those points per vehicle
-        VehiclePoints.push_back(child);
-
-    }
-
-    // this returns a list of lines from the source point to the result point for each vehicle
-    return VehiclePoints;
-}
-
-
-
-
-// std::vector<points>  [v1child, v2child]
-std::vector<Point> ompl::control::MAPSRRTcost::MakeKinPath(const base::State *result) const
-{
-    //  this function will take in a source state and a result state
-    // it will return a line in the 2D plane from these states (projected onto 2D)
-    std::vector<Point> VehiclePoints;
-
-    // get the compound state of the result
-    const ompl::base::CompoundStateSpace::StateType *destination = 
-        result->as<ompl::base::CompoundStateSpace::StateType>();
-
-    for (int i = 0; i < NumVs; i++)
-    {
-        // get the xy point of the result per vehicle
-        const ob::RealVectorStateSpace::StateType *DESTxyState = 
-            destination->as<ob::RealVectorStateSpace::StateType>(2*i);
-
-        auto r = DESTxyState->values;
-
-        // get the point for the vehicle state
-        point child(r[0], r[1]);
-
-        // generate a segement of those points per vehicle
-        VehiclePoints.push_back(child);
-
-    }
-
-    // this returns a list of lines from the source point to the result point for each vehicle
-    return VehiclePoints;
-}
-
-// different from distance function above in that this function saves distances to the node
-void ompl::control::MAPSRRTcost::Get2DimDistance(Motion *motion, const base::State *source, 
-    const base::State *result)
-{
-    if ((model_ == "2KinematicCars") || (model_ == "3Unicycle") || model_ == "3KinematicCars")
-        Get2DimDist2KinCars(motion, source, result);
-    else if ((model_ == "2Linear") || (model_ == "3Linear"))
-        Get2DimDist2LinCars(motion, source, result);
-    else
-    {
-        std::cout << "Current Distance Model Not Implemented." << std::endl;
-        exit(1);
-    }
-}
-
-void ompl::control::MAPSRRTcost::Get2DimDist2LinCars(Motion *motion, const base::State *source, 
-    const base::State *result)
-{
-    // allocate the returnable -- [distance between ]
-    std::vector<double> AllVehicleDist;
-
-    // get the entire compound state for result
-    const ompl::base::CompoundStateSpace::StateType *destination = 
-        result->as<ompl::base::CompoundStateSpace::StateType>();
-
-    // get the entire compound state space for source
-    const ob::CompoundStateSpace::StateType *src = 
-        source->as<ob::CompoundStateSpace::StateType>();
-
-    for (int i = 0; i < NumVs; i++)
-    {
-        // get the xy point of the source
-        const ob::RealVectorStateSpace::StateType *SRCxyState = 
-            src->as<ob::RealVectorStateSpace::StateType>(i);
-
-        // get the xy point of the result per vehicle
-        const ob::RealVectorStateSpace::StateType *DESTxyState = 
-            destination->as<ob::RealVectorStateSpace::StateType>(i);
-
-        auto s = SRCxyState->values;
-
-        auto r = DESTxyState->values;
-
-        // get the point for the vehicle state
-        Point parent(s[0], s[1]);
-        Point child(r[0], r[1]);
-
-        double dist = bg::distance(parent, child);
-        AllVehicleDist.push_back(dist);
-    }
-
-    // at end of loop, AllVehicleDistance contains the linear distance between the source and result
-    // next, we add it to the existing distances that are there
-    if ((motion->AllVehicleDistance).size() == 0)
-    {
-        // std::cout << "here" << std::endl;
-        motion->AllVehicleDistance = AllVehicleDist;
-    }
-    else
-    {
-
-        for (int v = 0; v < NumVs; v++)
-        {
-            (motion->AllVehicleDistance)[v] = (motion->AllVehicleDistance)[v] + AllVehicleDist[v];
-        }
-    }
-}
-
-
-
-
-// different from distance function above in that this function saves distances to the node
-void ompl::control::MAPSRRTcost::Get2DimDist2KinCars(Motion *motion, const base::State *source, 
-    const base::State *result)
-{
-    // allocate the returnable -- [distance between ]
-    std::vector<double> AllVehicleDist;
-
-    // get the entire compound state for result
-    const ompl::base::CompoundStateSpace::StateType *destination = 
-        result->as<ompl::base::CompoundStateSpace::StateType>();
-
-    // get the entire compound state space for source
-    const ob::CompoundStateSpace::StateType *src = 
-        source->as<ob::CompoundStateSpace::StateType>();
-
-    for (int i = 0; i < NumVs; i++)
-    {
-        // get the xy point of the source
-        const ob::RealVectorStateSpace::StateType *SRCxyState = 
-            src->as<ob::RealVectorStateSpace::StateType>(2*i);
-
-        // get the xy point of the result per vehicle
-        const ob::RealVectorStateSpace::StateType *DESTxyState = 
-            destination->as<ob::RealVectorStateSpace::StateType>(2*i);
-
-        auto s = SRCxyState->values;
-
-        auto r = DESTxyState->values;
-
-        // get the point for the vehicle state
-        Point parent(s[0], s[1]);
-        Point child(r[0], r[1]);
-
-        double dist = bg::distance(parent, child);
-        AllVehicleDist.push_back(dist);
-    }
-
-    // at end of loop, AllVehicleDistance contains the linear distance between the source and result
-    // next, we add it to the existing distances that are there
-    if ((motion->AllVehicleDistance).size() == 0)
-    {
-        // std::cout << "here" << std::endl;
-        motion->AllVehicleDistance = AllVehicleDist;
-    }
-    else
-    {
-
-        for (int v = 0; v < NumVs; v++)
-        {
-            (motion->AllVehicleDistance)[v] = (motion->AllVehicleDistance)[v] + AllVehicleDist[v];
-        }
-    }
-    // std::cout << "Dist: " << (motion->AllVehicleDistance)[0] << " " << 
-    //     (motion->AllVehicleDistance)[1] << std::endl;
-}
-
-
-unsigned int ompl::control::MAPSRRTcost::propagateWhileValid(Motion *motion,const base::State *state, 
+unsigned int ompl::control::MAPSSST::propagateWhileValid(Motion *motion,const base::State *state, 
     Control *control, int steps, base::State *result, const std::vector<int> DoNotProgogate)
 {
     // std::cout << motion << std::endl;
@@ -890,7 +530,417 @@ unsigned int ompl::control::MAPSRRTcost::propagateWhileValid(Motion *motion,cons
     return 0;
 }
 
-void ompl::control::MAPSRRTcost::FindTotalIntersections(Motion *NewMotion)
+void ompl::control::MAPSSST::overrideStates(const std::vector<int> DoNotProp, const base::State *source, 
+    base::State *result, Control *control)
+{
+    if (model_ == "2KinematicCars" || model_ == "3KinematicCars")
+        OverrideKinCars(DoNotProp, source, result, control);
+    else if ((model_ == "2Linear") || (model_ == "3Linear"))
+        OverrideLinCars(DoNotProp, source, result, control);
+    else if (model_ == "3Unicycle" || model_ == "2Unicycle")
+        OverrideUniCars(DoNotProp, source, result, control);
+    else
+    {
+        std::cout << "Current Override States Model Not Implemented." << std::endl;
+        exit(1);
+    }
+}
+
+void ompl::control::MAPSSST::OverrideUniCars(const std::vector<int> DoNotProp, const base::State *source, 
+    base::State *result, Control *control)
+{
+    // this function takes in a state and a list of vehicle indexes that do not need to be propogated
+    // it changes the state s.t. state propogation and controls are null for any vehicles in the goal
+    if (DoNotProp.size() > 0)
+    {
+        // this array has a list of vehicles that do not need to be progpogated
+        // we need to iterate through all of them
+
+        // get the entire compound state for result
+        ompl::base::CompoundStateSpace::StateType *destination = 
+            result->as<ompl::base::CompoundStateSpace::StateType>();
+
+        // get the entire compound state space for source
+        const ob::CompoundStateSpace::StateType *src = 
+            source->as<ob::CompoundStateSpace::StateType>();
+
+        double *cntrl = control->as<oc::RealVectorControlSpace::ControlType>()->values;
+
+        for (int i = 0; i < DoNotProp.size(); i++)
+        {
+            // overriding controls 
+            // indexing method: ControlDimension(vehicle) + ControlIndex
+            cntrl[NumCs*DoNotProp[i] + 0] = 0.0;
+            cntrl[NumCs*DoNotProp[i] + 1] = 0.0;
+
+            // next, make the source state the destination state for the indiv. vehicles
+            // indexing method: 2(vehicle) or 2(vehicle) + 1
+
+            // get the specific xy state of result 
+            ob::RealVectorStateSpace::StateType *xyDest = 
+                destination->as<ob::RealVectorStateSpace::StateType>(2*DoNotProp[i]);
+
+            // get the specific xy state of the source
+            const auto *SRCxyState = src->as<ob::RealVectorStateSpace::StateType>(2*DoNotProp[i]);
+
+            // get the specific orientation of result
+            ob::SO2StateSpace::StateType *rotd = destination->as<ob::SO2StateSpace::StateType>(2*DoNotProp[i] + 1);
+
+            // get the specific orientation of the source
+            const auto *rots = src->as<ob::SO2StateSpace::StateType>(2*DoNotProp[i] + 1);
+
+            // overriding the position state
+            xyDest->values[0] = SRCxyState->values[0];
+            xyDest->values[1] = SRCxyState->values[1];
+
+            // overriding the orientation
+            rotd->value = rots->value;
+
+        }
+    }
+}
+
+
+void ompl::control::MAPSSST::OverrideLinCars(const std::vector<int> DoNotProp, const base::State *source, 
+    base::State *result, Control *control)
+{
+    // this function takes in a state and a list of vehicle indexes that do not need to be propogated
+    // it changes the state s.t. state propogation and controls are null for any vehicles in the goal
+    if (DoNotProp.size() > 0)
+    {
+        // this array has a list of vehicles that do not need to be progpogated
+        // we need to iterate through all of them
+
+        // get the entire compound state for result
+        ompl::base::CompoundStateSpace::StateType *destination = 
+            result->as<ompl::base::CompoundStateSpace::StateType>();
+
+        // get the entire compound state space for source
+        const ob::CompoundStateSpace::StateType *src = 
+            source->as<ob::CompoundStateSpace::StateType>();
+
+        double *cntrl = control->as<oc::RealVectorControlSpace::ControlType>()->values;
+
+        for (int i = 0; i < DoNotProp.size(); i++)
+        {
+            // overriding controls 
+            // indexing method: ControlDimension(vehicle) + ControlIndex
+            cntrl[NumCs*DoNotProp[i] + 0] = 0.0;
+            cntrl[NumCs*DoNotProp[i] + 1] = 0.0;
+
+            // next, make the source state the destination state for the indiv. vehicles
+            // indexing method: 2(vehicle) or 2(vehicle) + 1
+
+            // get the specific xy state of result 
+            ob::RealVectorStateSpace::StateType *xyDest = 
+                destination->as<ob::RealVectorStateSpace::StateType>(DoNotProp[i]);
+
+            // get the specific xy state of the source
+            const auto *SRCxyState = src->as<ob::RealVectorStateSpace::StateType>(DoNotProp[i]);
+
+            // overriding the position state
+            xyDest->values[0] = SRCxyState->values[0];
+            xyDest->values[1] = SRCxyState->values[1];
+
+        }
+    }
+}
+
+void ompl::control::MAPSSST::OverrideKinCars(const std::vector<int> DoNotProp, const base::State *source, 
+    base::State *result, Control *control)
+{
+    // this function takes in a state and a list of vehicle indexes that do not need to be propogated
+    // it changes the state s.t. state propogation and controls are null for any vehicles in the goal
+    if (DoNotProp.size() > 0)
+    {
+        // this array has a list of vehicles that do not need to be progpogated
+        // we need to iterate through all of them
+
+        // get the entire compound state for result
+        ompl::base::CompoundStateSpace::StateType *destination = 
+            result->as<ompl::base::CompoundStateSpace::StateType>();
+
+        // get the entire compound state space for source
+        const ob::CompoundStateSpace::StateType *src = 
+            source->as<ob::CompoundStateSpace::StateType>();
+
+        double *cntrl = control->as<oc::RealVectorControlSpace::ControlType>()->values;
+
+        for (int i = 0; i < DoNotProp.size(); i++)
+        {
+            // overriding controls 
+            // indexing method: ControlDimension(vehicle) + ControlIndex
+            cntrl[NumCs*DoNotProp[i] + 0] = 0.0;
+            cntrl[NumCs*DoNotProp[i] + 1] = 0.0;
+
+            // next, make the source state the destination state for the indiv. vehicles
+            // indexing method: 2(vehicle) or 2(vehicle) + 1
+
+            // get the specific xy state of result 
+            ob::RealVectorStateSpace::StateType *xyDest = 
+                destination->as<ob::RealVectorStateSpace::StateType>(2*DoNotProp[i]);
+
+            // get the specific xy state of the source
+            const auto *SRCxyState = src->as<ob::RealVectorStateSpace::StateType>(2*DoNotProp[i]);
+
+            // get the specific orientation of result
+            ob::SO2StateSpace::StateType *rotd = destination->as<ob::SO2StateSpace::StateType>(2*DoNotProp[i] + 1);
+
+            // get the specific orientation of the source
+            const auto *rots = src->as<ob::SO2StateSpace::StateType>(2*DoNotProp[i] + 1);
+
+            // overriding the position state
+            xyDest->values[0] = SRCxyState->values[0];
+            xyDest->values[1] = SRCxyState->values[1];
+
+            // overriding the orientation
+            rotd->value = rots->value;
+
+        }
+    }
+}
+
+std::vector<Point> ompl::control::MAPSSST::MakeLinearPath(const base::State *st) const
+{
+    std::vector<Point> VehiclePoints;
+    if (model_ == "2KinematicCars" || model_ == "3KinematicCars")
+        VehiclePoints = MakeKinPath(st);
+    else if ((model_ == "2Linear") || (model_ == "3Linear"))
+        VehiclePoints = MakeLinPath(st);
+    else if (model_ == "3Unicycle" || model_ == "2Unicycle")
+        VehiclePoints = MakeUniPath(st);
+    else
+    {
+        std::cout << "Current Linear Path Model Not Implemented." << std::endl;
+        exit(1);
+    }
+    return VehiclePoints;
+}
+
+// std::vector<points>  [v1child, v2child]
+std::vector<Point> ompl::control::MAPSSST::MakeUniPath(const base::State *result) const
+{
+    //  this function will take in a source state and a result state
+    // it will return a line in the 2D plane from these states (projected onto 2D)
+    std::vector<Point> VehiclePoints;
+
+    // get the compound state of the result
+    const ompl::base::CompoundStateSpace::StateType *destination = 
+        result->as<ompl::base::CompoundStateSpace::StateType>();
+
+    for (int i = 0; i < NumVs; i++)
+    {
+        // get the xy point of the result per vehicle
+        const ob::RealVectorStateSpace::StateType *DESTxyState = 
+            destination->as<ob::RealVectorStateSpace::StateType>(2 * i);
+
+        auto r = DESTxyState->values;
+
+        // get the point for the vehicle state
+        point child(r[0], r[1]);
+
+        // generate a segement of those points per vehicle
+        VehiclePoints.push_back(child);
+
+    }
+
+    // this returns a list of lines from the source point to the result point for each vehicle
+    return VehiclePoints;
+}
+
+// std::vector<points>  [v1child, v2child]
+std::vector<Point> ompl::control::MAPSSST::MakeLinPath(const base::State *result) const
+{
+    //  this function will take in a source state and a result state
+    // it will return a line in the 2D plane from these states (projected onto 2D)
+    std::vector<Point> VehiclePoints;
+
+    // get the compound state of the result
+    const ompl::base::CompoundStateSpace::StateType *destination = 
+        result->as<ompl::base::CompoundStateSpace::StateType>();
+
+    for (int i = 0; i < NumVs; i++)
+    {
+        // get the xy point of the result per vehicle
+        const ob::RealVectorStateSpace::StateType *DESTxyState = 
+            destination->as<ob::RealVectorStateSpace::StateType>(i);
+
+        auto r = DESTxyState->values;
+
+        // get the point for the vehicle state
+        point child(r[0], r[1]);
+
+        // generate a segement of those points per vehicle
+        VehiclePoints.push_back(child);
+
+    }
+
+    // this returns a list of lines from the source point to the result point for each vehicle
+    return VehiclePoints;
+}
+
+
+
+
+// std::vector<points>  [v1child, v2child]
+std::vector<Point> ompl::control::MAPSSST::MakeKinPath(const base::State *result) const
+{
+    //  this function will take in a source state and a result state
+    // it will return a line in the 2D plane from these states (projected onto 2D)
+    std::vector<Point> VehiclePoints;
+
+    // get the compound state of the result
+    const ompl::base::CompoundStateSpace::StateType *destination = 
+        result->as<ompl::base::CompoundStateSpace::StateType>();
+
+    for (int i = 0; i < NumVs; i++)
+    {
+        // get the xy point of the result per vehicle
+        const ob::RealVectorStateSpace::StateType *DESTxyState = 
+            destination->as<ob::RealVectorStateSpace::StateType>(2*i);
+
+        auto r = DESTxyState->values;
+
+        // get the point for the vehicle state
+        point child(r[0], r[1]);
+
+        // generate a segement of those points per vehicle
+        VehiclePoints.push_back(child);
+
+    }
+
+    // this returns a list of lines from the source point to the result point for each vehicle
+    return VehiclePoints;
+}
+
+// different from distance function above in that this function saves distances to the node
+void ompl::control::MAPSSST::Get2DimDistance(Motion *motion, const base::State *source, 
+    const base::State *result)
+{
+    if ((model_ == "2KinematicCars") || (model_ == "3Unicycle") || model_ == "3KinematicCars" || (model_ == "2Unicycle"))
+        Get2DimDist2KinCars(motion, source, result);
+    else if ((model_ == "2Linear") || (model_ == "3Linear"))
+        Get2DimDist2LinCars(motion, source, result);
+    else
+    {
+        std::cout << "Current Distance Model Not Implemented." << std::endl;
+        exit(1);
+    }
+}
+
+void ompl::control::MAPSSST::Get2DimDist2LinCars(Motion *motion, const base::State *source, 
+    const base::State *result)
+{
+    // allocate the returnable -- [distance between ]
+    std::vector<double> AllVehicleDist;
+
+    // get the entire compound state for result
+    const ompl::base::CompoundStateSpace::StateType *destination = 
+        result->as<ompl::base::CompoundStateSpace::StateType>();
+
+    // get the entire compound state space for source
+    const ob::CompoundStateSpace::StateType *src = 
+        source->as<ob::CompoundStateSpace::StateType>();
+
+    for (int i = 0; i < NumVs; i++)
+    {
+        // get the xy point of the source
+        const ob::RealVectorStateSpace::StateType *SRCxyState = 
+            src->as<ob::RealVectorStateSpace::StateType>(i);
+
+        // get the xy point of the result per vehicle
+        const ob::RealVectorStateSpace::StateType *DESTxyState = 
+            destination->as<ob::RealVectorStateSpace::StateType>(i);
+
+        auto s = SRCxyState->values;
+
+        auto r = DESTxyState->values;
+
+        // get the point for the vehicle state
+        Point parent(s[0], s[1]);
+        Point child(r[0], r[1]);
+
+        double dist = bg::distance(parent, child);
+        AllVehicleDist.push_back(dist);
+    }
+
+    // at end of loop, AllVehicleDistance contains the linear distance between the source and result
+    // next, we add it to the existing distances that are there
+    if ((motion->AllVehicleDistance).size() == 0)
+    {
+        // std::cout << "here" << std::endl;
+        motion->AllVehicleDistance = AllVehicleDist;
+    }
+    else
+    {
+
+        for (int v = 0; v < NumVs; v++)
+        {
+            (motion->AllVehicleDistance)[v] = (motion->AllVehicleDistance)[v] + AllVehicleDist[v];
+        }
+    }
+}
+
+
+
+
+// different from distance function above in that this function saves distances to the node
+void ompl::control::MAPSSST::Get2DimDist2KinCars(Motion *motion, const base::State *source, 
+    const base::State *result)
+{
+    // allocate the returnable -- [distance between ]
+    std::vector<double> AllVehicleDist;
+
+    // get the entire compound state for result
+    const ompl::base::CompoundStateSpace::StateType *destination = 
+        result->as<ompl::base::CompoundStateSpace::StateType>();
+
+    // get the entire compound state space for source
+    const ob::CompoundStateSpace::StateType *src = 
+        source->as<ob::CompoundStateSpace::StateType>();
+
+    for (int i = 0; i < NumVs; i++)
+    {
+        // get the xy point of the source
+        const ob::RealVectorStateSpace::StateType *SRCxyState = 
+            src->as<ob::RealVectorStateSpace::StateType>(2*i);
+
+        // get the xy point of the result per vehicle
+        const ob::RealVectorStateSpace::StateType *DESTxyState = 
+            destination->as<ob::RealVectorStateSpace::StateType>(2*i);
+
+        auto s = SRCxyState->values;
+
+        auto r = DESTxyState->values;
+
+        // get the point for the vehicle state
+        Point parent(s[0], s[1]);
+        Point child(r[0], r[1]);
+
+        double dist = bg::distance(parent, child);
+        AllVehicleDist.push_back(dist);
+    }
+
+    // at end of loop, AllVehicleDistance contains the linear distance between the source and result
+    // next, we add it to the existing distances that are there
+    if ((motion->AllVehicleDistance).size() == 0)
+    {
+        // std::cout << "here" << std::endl;
+        motion->AllVehicleDistance = AllVehicleDist;
+    }
+    else
+    {
+
+        for (int v = 0; v < NumVs; v++)
+        {
+            (motion->AllVehicleDistance)[v] = (motion->AllVehicleDistance)[v] + AllVehicleDist[v];
+        }
+    }
+    // std::cout << "Dist: " << (motion->AllVehicleDistance)[0] << " " << 
+    //     (motion->AllVehicleDistance)[1] << std::endl;
+}
+
+void ompl::control::MAPSSST::FindTotalIntersections(Motion *NewMotion)
 {
     // bool intersect
     std::clock_t start, end; 
@@ -900,16 +950,16 @@ void ompl::control::MAPSRRTcost::FindTotalIntersections(Motion *NewMotion)
     // if (NewMotion->LocationsOfIntersect.size() != 0)
     //     std::cout << NewMotion->LocationsOfIntersect.size();
 
-    int ParentIntersections = NewMotion->parent->NumIntersections;
+    int ParentIntersections = NewMotion->parent_->NumIntersections;
 
     if (NumIntersect > 0)  // only checks parent -> child 
     {
         NewMotion->NumIntersections = ParentIntersections + NumIntersect;
-        NewMotion->cost = NewMotion->parent->cost + 1;
+        NewMotion->cost = NewMotion->parent_->cost + 1;
     }
     else
     {
-        NewMotion->cost = NewMotion->parent->cost;
+        NewMotion->cost = NewMotion->parent_->cost;
         NewMotion->NumIntersections = ParentIntersections;
     }
 
@@ -918,7 +968,7 @@ void ompl::control::MAPSRRTcost::FindTotalIntersections(Motion *NewMotion)
     time_ = time_ + time_taken;
 }
 
-int ompl::control::MAPSRRTcost::Project2D(Motion *NewMotion)
+int ompl::control::MAPSSST::Project2D(Motion *NewMotion)
 {
     int intersects;
     if (NumVs == 2)
@@ -933,7 +983,7 @@ int ompl::control::MAPSRRTcost::Project2D(Motion *NewMotion)
     return intersects;
 }
 
-int ompl::control::MAPSRRTcost::Project2D_3Vehicles(Motion *NewMotion)
+int ompl::control::MAPSSST::Project2D_3Vehicles(Motion *NewMotion)
 {
     int NumIntersect = 0;
 
@@ -969,11 +1019,11 @@ int ompl::control::MAPSRRTcost::Project2D_3Vehicles(Motion *NewMotion)
 
 
     Motion *CurrMotion = NewMotion;
-    if (CurrMotion->parent)
+    if (CurrMotion->parent_)
     {
-        int CurrCost = CurrMotion->parent->cost;
+        int CurrCost = CurrMotion->parent_->cost;
         
-        while (CurrMotion->parent && CurrMotion->parent->cost == CurrCost)
+        while (CurrMotion->parent_ && CurrMotion->parent_->cost == CurrCost)
             {
                 // current motion path
                 std::vector<std::vector<Point>> CurrPath = CurrMotion->LinearPath;
@@ -1213,7 +1263,7 @@ int ompl::control::MAPSRRTcost::Project2D_3Vehicles(Motion *NewMotion)
                     }
                 }
             }
-            CurrMotion = CurrMotion->parent;
+            CurrMotion = CurrMotion->parent_;
         }
     } 
     NewMotion->LocationsOfIntersect = LocOfInt;
@@ -1221,7 +1271,7 @@ int ompl::control::MAPSRRTcost::Project2D_3Vehicles(Motion *NewMotion)
 }
 
 
-int ompl::control::MAPSRRTcost::Project2D_2Vehicles(Motion *NewMotion)
+int ompl::control::MAPSSST::Project2D_2Vehicles(Motion *NewMotion)
 {
     // std::cout << "here";
     int NumIntersect = 0;
@@ -1257,11 +1307,11 @@ int ompl::control::MAPSRRTcost::Project2D_2Vehicles(Motion *NewMotion)
     }
 
     Motion *CurrMotion = NewMotion;
-    if (CurrMotion->parent)
+    if (CurrMotion->parent_)
     {
-        int CurrCost = CurrMotion->parent->cost;
+        int CurrCost = CurrMotion->parent_->cost;
 
-        while (CurrMotion->parent && CurrMotion->parent->cost == CurrCost)
+        while (CurrMotion->parent_ && CurrMotion->parent_->cost == CurrCost)
         {
             // current motion path
             std::vector<std::vector<Point>> CurrPath = CurrMotion->LinearPath;
@@ -1367,242 +1417,67 @@ int ompl::control::MAPSRRTcost::Project2D_2Vehicles(Motion *NewMotion)
                     }
                 }
             }
-            CurrMotion = CurrMotion->parent;
+            CurrMotion = CurrMotion->parent_;
         }
     }
     NewMotion->LocationsOfIntersect = LocOfInt;
     return NumIntersect;
 }
 
-unsigned int ompl::control::MAPSRRTcost::FindTotalPathCost(Motion *LastMotion)
+ompl::control::MAPSSST::Motion *ompl::control::MAPSSST::selectNode(ompl::control::MAPSSST::Motion *sample)
 {
-    // std::cout << "beginning cost calc" << std::endl;
-    // std::cout << "in here" << std::endl;
-    Motion *CurrMotion = LastMotion;
-    // if (CurrMotion->LocationsOfIntersect.size() != 0)
-    // {
-    //     std::cout << CurrMotion->LocationsOfIntersect.size() << std::endl;
-    // }
-    
-    int NumSegs = 1;
-    int depth = 1;
-    bool done = false;
-
-    while (!done)
+    std::vector<Motion *> ret;
+    Motion *selected = nullptr;
+    base::Cost bestCost = opt_->infiniteCost();
+    nn_->nearestR(sample, selectionRadius_, ret);
+    for (auto &i : ret)
     {
-        // std::cout << CurrMotion->NumIntersections << std::endl;
-        // if ((CurrMotion->NumIntersections) == (BeginSegment->NumIntersections))
-        // {
-        //     std::cout << "there is a change in intersection" << std::endl;
-        // }
-        // else
-        // {
-
-        // need to check for a segmentation
-
-        // THIS LINE WORKS!!!
-        // std::vector<bool> info = CheckSegmentation(CurrMotion, depth, done);
-
-        // EXPERIMENTAL!!
-        std::vector<bool> info = CheckSegmentationTest(CurrMotion, depth);
-
-        // std::cout << info[0] << info[1] << std::endl;
-
-
-        if (info[1]) // if found an intersection
+        if (!i->inactive_ && opt_->isCostBetterThan(i->accCost_, bestCost))
         {
-            if (depth == 1) 
-            {
-                CurrMotion->SetCost(NumSegs);
-                CurrMotion = CurrMotion->parent;
-            }
-            // we found an intersection in the segment
-            // thus, we need to set the cost and then reset
-            else
-            {
-                for (int i = 0; i < depth - 1; i++)
-                {
-                    // change the cost of all motions prior to the intersection
-                    // this is depth-1 because there was no intersection prior to this iteration
-                    // after chenging the cost, we move back to that motion
-                    if (CurrMotion->parent != nullptr)
-                    {
-                        CurrMotion->SetCost(NumSegs);
-                        CurrMotion = CurrMotion->parent;
-                    }
-                    else
-                    {
-                        CurrMotion->SetCost(NumSegs);
-                        break;
-                    }  
-                }
-            }
-            NumSegs += 1;
-            depth = 1;
-            // std::cout << NumSegs << std::endl;
-        }
-        if (info[0])  // if done
-        {
-            done = info[0];
-            while (CurrMotion->parent != nullptr)
-            {
-                CurrMotion->SetCost(NumSegs);
-                CurrMotion = CurrMotion->parent;
-            }
-        }
-        else
-        {
-            depth += 1;
-        }
-        // }
-    // CurrMotion = CurrMotion->parent;
-    }
-    // CurrMotion->parent->SetCost(NumSegs);
-    CurrMotion->SetCost(NumSegs);
-    // std::cout << "out" << std::endl;
-    return NumSegs;
-}
-
-std::vector<bool> ompl::control::MAPSRRTcost::CheckSegmentationTest(Motion *motion, int depth)
-{
-	std::vector<bool> info;
-
-	std::vector<Motion *> CurrSegment;
-
-	const Motion *CurrMotion = motion;
-
-	Motion *CreateSegment = motion;
-
-	for (int i = 0; i < depth; i++)
-	{
-		if (CreateSegment->parent != nullptr)
-		{
-			CurrSegment.push_back(CreateSegment);
-			CreateSegment = CreateSegment->parent;
-		}
-		else
-		{
-			CurrSegment.push_back(CreateSegment);
-			info.push_back(true);
-			break;
-		}
-
-	}
-	if (info.size() == 0)
-		info.push_back(false);
-
-	for (int j = 0; j < CurrSegment.size(); j++)
-	{
-        // std::cout << CurrSegment[j] << std::endl;
-        // std::cout << CurrMotion->LocationsOfIntersect.size() << std::endl;
-
-        for (int check = 0; check < CurrSegment.size(); check++)
-        {
-
-		  for (int m = 0; m < CurrSegment[check]->LocationsOfIntersect.size(); m++)
-		  {
-                // std::cout << CurrSegment[j] << std::endl;
-                // std::cout << CurrMotion->LocationsOfIntersect[m] << std::endl;
-		  	if  (CurrSegment[j] == CurrSegment[check]->LocationsOfIntersect[m])
-		  	{
-                    // std::cout << "here" << std::endl;
-		  		// there is an intersection within segment...
-		  		info.push_back(true);
-		  		return info;
-		  	}
-		  }
-        }
-	}
-	info.push_back(false);
-	return info;
-}
-
-std::vector<bool> ompl::control::MAPSRRTcost::CheckSegmentation(Motion *motion, int depth, bool done)
-{
-    // std::cout << "in segment" << std::endl;
-    std::vector<bool> info;
-    // copy the motion into a local vatiable
-    const Motion *CurrMotion = motion;
-
-    // // initialize a vector of lines for each vehilces motion
-    std::vector<Segment> V1motions;
-    std::vector<Segment> V2motions;
-
-    // create segments for all vehicles[[list of segments for v1path], [list of segments for v2path]]
-    std::vector<std::vector<Segment>> AllVehicleNewMotionPath;
-
-    AllVehicleNewMotionPath.push_back(V1motions);
-    AllVehicleNewMotionPath.push_back(V2motions);
-
-    //  for the specified number of times, we are going to create a line from parent to state
-    // for each vehicle
-    for (int i = 0; i < depth; i++)
-    {
-        // std::cout << "getting path" << std::endl;
-        std::vector<std::vector<Point>> CurrPath = CurrMotion->LinearPath;
-        // std::cout << CurrPath.size() << std::endl;
-        // std::cout << CurrPath[0].size() << std::endl;
-        // std::cout << CurrPath[1].size() << std::endl;
-        for (int v = 0; v < NumVs; v++)
-        {
-            for (int j = 0; j < CurrPath.size() - 1; j++)
-            {
-                // std::cout << "getting parent" << std::endl;
-                Point parent = (CurrPath[j][v]);
-                // std::cout << "getting child" << std::endl;
-                Point child = (CurrPath[j + 1][v]);
-
-                Segment VSeg(parent, child);
-
-                AllVehicleNewMotionPath[v].push_back(VSeg);
-            }
-            
-        }
-        if (CurrMotion->parent->LinearPath.size() == 0)
-        {
-            i = 10000;
-            done = true;
-            info.push_back(done);
-            break;
-        }
-        else
-        {
-            CurrMotion = CurrMotion->parent;
-        }
-
-    }
-    if (info.size() == 0)
-        info.push_back(false);
-
-    // std::cout << "out of while loop" << std::endl;
-    // std::cout << AllVehicleNewMotionPath.size() << " " << AllVehicleNewMotionPath[0].size() << 
-    //     " " << AllVehicleNewMotionPath[1].size() << std::endl;
-    // now that we have a vector of line segments, we need to check if the segments intersect
-    for (int v1 = 0; v1 < AllVehicleNewMotionPath[0].size(); v1++)
-    {
-        for (int v2 = 0; v2 < AllVehicleNewMotionPath[1].size(); v2++)
-        {
-            bool intersect = boost::geometry::intersects(AllVehicleNewMotionPath[0][v1], AllVehicleNewMotionPath[1][v2]);
-            if (intersect)
-            {
-                // intersection was found, no need to continue with for loop
-                info.push_back(true);
-                // std::cout << "out segments" << std::endl;
-                return info;
-            }
+            bestCost = i->accCost_;
+            selected = i;
         }
     }
-    // std::cout << "end of double for loop" << std::endl;
-    // no intersection was found
-    info.push_back(false);
-    // std::cout << "out segment" << std::endl;
-    return info; 
+    if (selected == nullptr)
+    {
+        int k = 1;
+        while (selected == nullptr)
+        {
+            nn_->nearestK(sample, k, ret);
+            for (unsigned int i = 0; i < ret.size() && selected == nullptr; i++)
+                if (!ret[i]->inactive_)
+                    selected = ret[i];
+            k += 5;
+        }
+    }
+    return selected;
 }
 
+ompl::control::MAPSSST::Witness *ompl::control::MAPSSST::findClosestWitness(ompl::control::MAPSSST::Motion *node)
+{
+    if (witnesses_->size() > 0)
+    {
+        auto *closest = static_cast<Witness *>(witnesses_->nearest(node));
+        if (distanceFunction(closest, node) > pruningRadius_)
+        {
+            closest = new Witness(siC_);
+            closest->linkRep(node);
+            si_->copyState(closest->state_, node->state_);
+            witnesses_->add(closest);
+        }
+        return closest;
+    }
+    else
+    {
+        auto *closest = new Witness(siC_);
+        closest->linkRep(node);
+        si_->copyState(closest->state_, node->state_);
+        witnesses_->add(closest);
+        return closest;
+    }
+}
 
-
-// main algorithm
-ompl::base::PlannerStatus ompl::control::MAPSRRTcost::solve(const base::PlannerTerminationCondition &ptc)
+ompl::base::PlannerStatus ompl::control::MAPSSST::solve(const base::PlannerTerminationCondition &ptc)
 {
     checkValidity();
     base::Goal *goal = pdef_->getGoal().get();
@@ -1611,9 +1486,11 @@ ompl::base::PlannerStatus ompl::control::MAPSRRTcost::solve(const base::PlannerT
     while (const base::State *st = pis_.nextStart())
     {
         auto *motion = new Motion(siC_);
-        si_->copyState(motion->state, st);
-        siC_->nullControl(motion->control);
+        si_->copyState(motion->state_, st);
+        siC_->nullControl(motion->control_);
         nn_->add(motion);
+        motion->accCost_ = opt_->identityCost();
+        findClosestWitness(motion);
     }
 
     if (nn_->size() == 0)
@@ -1623,259 +1500,342 @@ ompl::base::PlannerStatus ompl::control::MAPSRRTcost::solve(const base::PlannerT
     }
 
     if (!sampler_)
-        sampler_ = siC_->allocStateSampler();
-    // if (!controlSampler_)
-    //     controlSampler_ = siC_->allocDirectedControlSampler();
+        sampler_ = si_->allocStateSampler();
+    if (!controlSampler_)
+        controlSampler_ = siC_->allocControlSampler();
 
-    // MAPS uses its own control sampler 
-
-    SimpleDirectedControlSamplerMAPS CntrlSampler(siC_, goal, g);
-
-
-    OMPL_INFORM("%s: Starting planning with %u states already in datastructure.", getName().c_str(), nn_->size());
+    OMPL_INFORM("%s: Starting planning with %u states already in datastructure\n", getName().c_str(), nn_->size());
 
     Motion *solution = nullptr;
     Motion *approxsol = nullptr;
     double approxdif = std::numeric_limits<double>::infinity();
+    bool sufficientlyShort = false;
 
     auto *rmotion = new Motion(siC_);
-    base::State *rstate = rmotion->state;
-    Control *rctrl = rmotion->control;
-    base::State *xstate = siC_->allocState();
-    // std::cout << "here";
-    // exit(1);
+    base::State *rstate = rmotion->state_;
+    Control *rctrl = rmotion->control_;
+    base::State *xstate = si_->allocState();
+
+    unsigned iterations = 0;
+
+    bool solved = false;
+    bool approximate = false;
 
     while (ptc == false)
     {
         /* sample random state (with goal biasing) */
         if (goal_s && rng_.uniform01() < goalBias_ && goal_s->canSample())
-        {
-            // std::cout << "accessing goal_s" << std::endl;
             goal_s->sampleGoal(rstate);
-        }
         else
-        {
             sampler_->sampleUniform(rstate);
-        }
 
-        // std::cout << "success" << std::endl;
         /* find closest state in the tree */
-        Motion *nmotion = nn_->nearest(rmotion);
+        Motion *nmotion = selectNode(rmotion);
 
         /* sample a random control that attempts to go towards the random state, and also sample a control duration */
-        // extended by Justin for MAPS RRT
-        // std::cout << "accessing sample goal biasing" << std::endl;
-        // unsigned int cd = controlSampler_->sampleTo(rctrl, nmotion->control, nmotion->state, rmotion->state);
-        // unsigned int cd = CntrlSampler.sampleToMAPS(rctrl, nmotion->control, nmotion->state, rmotion->state);
-        unsigned int cd = MultiAgentControlSampler(rmotion, rctrl, nmotion->control, nmotion->state, rmotion->state);
-        // auto *motion = new Motion(siC_);
-        // // copy state and controls that were sampled into the motion
-        // si_->copyState(motion->state, rmotion->state);
-        // siC_->copyControl(motion->control, rctrl);
-        // motion->steps = cd;
-        // motion->parent = nmotion;
-        // motion->LinearPath = rmotion->LinearPath;
-        // motion->AllVehicleDistance = rmotion->AllVehicleDistance;
-        // std::cout << "success" << std::endl;
-        // if (addIntermediateStates_)
-        // {
-        //     std::cout << "in here" << std::endl;
-        //     // this code is contributed by Jennifer Barry
-        //     std::vector<base::State *> pstates;
-        //     cd = siC_->propagateWhileValid(nmotion->state, rctrl, cd, pstates, true);
+        controlSampler_->sample(rctrl);
+        unsigned int cd = rng_.uniformInt(siC_->getMinControlDuration(), siC_->getMaxControlDuration());
+        unsigned int propCd = siC_->propagateWhileValid(nmotion->state_, rctrl, cd, rstate);
+        unsigned int propCd_test = MultiAgentControlSampler(rmotion, rctrl, nmotion->control_, nmotion->state_, rmotion->state_);
 
-        //     if (cd >= siC_->getMinControlDuration())
-        //     {
-        //         Motion *lastmotion = nmotion;
-        //         bool solved = false;
-        //         size_t p = 0;
-        //         for (; p < pstates.size(); ++p)
-        //         {
-        //             /* create a motion */
-        //             auto *motion = new Motion();
-        //             motion->state = pstates[p];
-        //             // we need multiple copies of rctrl
-        //             motion->control = siC_->allocControl();
-        //             siC_->copyControl(motion->control, rctrl);
-        //             motion->steps = 1;
-        //             motion->parent = lastmotion;
-        //             lastmotion = motion;
-        //             nn_->add(motion);
-        //             double dist = 0.0;
-        //             solved = goal->isSatisfied(motion->state, &dist);
-        //             if (solved)
-        //             {
-        //                 approxdif = dist;
-        //                 solution = motion;
-        //                 break;
-        //             }
-        //             if (dist < approxdif)
-        //             {
-        //                 approxdif = dist;
-        //                 approxsol = motion;
-        //             }
-        //         }
-
-        //         // free any states after we hit the goal
-        //         while (++p < pstates.size())
-        //             si_->freeState(pstates[p]);
-        //         if (solved)
-        //             break;
-        //     }
-        //     else
-        //         for (auto &pstate : pstates)
-        //             si_->freeState(pstate);
-        // }
-        // else
-        // {
-        
-        if (cd >= siC_->getMinControlDuration())
+        if (propCd_test == cd)
         {
+            base::Cost incCost = opt_->motionCost(nmotion->state_, rstate);
+            base::Cost cost = opt_->combineCosts(nmotion->accCost_, incCost);
+            Witness *closestWitness = findClosestWitness(rmotion);
 
-            /* create a motion */
-            auto *motion = new Motion(siC_);
-            // copy state and controls that were sampled into the motion
-            si_->copyState(motion->state, rmotion->state);
-            siC_->copyControl(motion->control, rctrl);
-            motion->steps = cd;
-            motion->parent = nmotion;
-            motion->LinearPath = rmotion->LinearPath;
-            motion->AllVehicleDistance = rmotion->AllVehicleDistance;
-            // std::cout << motion->parent << std::endl;
-            FindTotalIntersections(motion);
-
-            if (motion->cost <= MaxSegments_)
+            if (closestWitness->rep_ == rmotion || opt_->isCostBetterThan(cost, closestWitness->rep_->accCost_))
             {
-                nn_->add(motion);
-                double dist = 0.0;
-                bool solv = goal->isSatisfied(motion->state, &dist);
-                if (solv)
+                Motion *oldRep = closestWitness->rep_;
+                /* create a motion */
+                auto *motion = new Motion(siC_);
+                motion->accCost_ = cost;
+                si_->copyState(motion->state_, rmotion->state_);
+                siC_->copyControl(motion->control_, rctrl);
+                motion->steps_ = cd;
+                motion->parent_ = nmotion;
+                nmotion->numChildren_++;
+                motion->LinearPath = rmotion->LinearPath;
+                motion->AllVehicleDistance = rmotion->AllVehicleDistance;
+                closestWitness->linkRep(motion);
+
+                FindTotalIntersections(motion);
+
+                if (motion->cost <= MaxSegments_)
                 {
-                    approxdif = dist;
-                    solution = motion;
-                    break;
-                }
-                if (dist < approxdif)
-                {
-                    approxdif = dist;
-                    approxsol = motion;
+                    nn_->add(motion);
+                    double dist = 0.0;
+                    bool solv = goal->isSatisfied(motion->state_, &dist);
+                
+                    if (solv && opt_->isCostBetterThan(motion->accCost_, prevSolutionCost_))
+                    {
+                        approxdif = dist;
+                        solution = motion;
+
+                        for (auto &i : prevSolution_)
+                            if (i)
+                                si_->freeState(i);
+                        prevSolution_.clear();
+                        for (auto &prevSolutionControl : prevSolutionControls_)
+                            if (prevSolutionControl)
+                                siC_->freeControl(prevSolutionControl);
+                        prevSolutionControls_.clear();
+                        prevSolutionSteps_.clear();
+
+                        Motion *solTrav = solution;
+                        while (solTrav->parent_ != nullptr)
+                        {
+                            prevSolution_.push_back(si_->cloneState(solTrav->state_));
+                            prevSolutionControls_.push_back(siC_->cloneControl(solTrav->control_));
+                            prevSolutionSteps_.push_back(solTrav->steps_);
+                            solTrav = solTrav->parent_;
+                        }
+                        prevSolution_.push_back(si_->cloneState(solTrav->state_));
+                        prevSolutionCost_ = solution->accCost_;
+
+                        // write the path to file
+                        lastGoalMotion_ = solution;
+                        Motion *lm = solution;
+
+                        std::vector<Motion *> mpath;
+                        while (lastGoalMotion_ != nullptr)
+                        {
+                            // std::cout << solution->GetCost() << std::endl;
+                            mpath.push_back(lastGoalMotion_);
+                            lastGoalMotion_ = lastGoalMotion_->parent_;
+                        }
+                        /* set the solution path */
+                        // auto path(std::make_shared<PathControl>(si_));
+                        auto path(std::make_shared<MAPSRRTPathControl>(si_));
+
+                        FinalCost_ = mpath[0]->GetCost();
+
+                        SolName_ = "txt/SST/path" + std::to_string(solution->accCost_.value()) + ".txt";
+
+                        for (int i = mpath.size() - 1; i >= 0; --i)
+                        {
+                            if (mpath[i]->parent_)
+                            {
+                                //  additional method added by Justin Kottinger
+                                path->append(mpath[i]->state_, mpath[i]->control_, mpath[i]->steps_ * siC_->getPropagationStepSize(), mpath[i]->GetCost());
+                                // path->append(mpath[i]->state, mpath[i]->control, mpath[i]->steps * siC_->getPropagationStepSize());
+                            }
+                            else
+                            {
+                                // the root node does not have a parent
+                                path->append(mpath[i]->state_, mpath[i]->GetCost());
+                                
+                            }
+                            // previous
+                            // path->append(prevSolution_[i], prevSolutionControls_[i - 1],
+                            //              prevSolutionSteps_[i - 1] * siC_->getPropagationStepSize());
+                        // not sure why this is here yet
+                        }
+                        path->append(prevSolution_[0]);
+                        solved = true;
+                        pdef_->addSolutionPath(path, approximate, approxdif, getName());
+    
+                        if (benchmark_ == false)
+                        {
+                            pdef_->addSolutionPath(path, approximate, approxdif, getName());
+                            std::ofstream PathFile;
+                            PathFile.open(SolName_);
+                            if (PathFile.fail())
+                            {
+                              std::cerr << "ERROR: Could not open path.txt" << std::endl;
+                              exit(1);
+                            }
+                            else
+                            {
+                              OMPL_INFORM("Writing solution to path.txt");
+                              // PathFile << data << std::endl;
+                              path->printAsMatrix(PathFile);
+                              PathFile.close();
+                              OMPL_INFORM("Computation completed successfully");
+                              // path.print(std::cout);  // this prints out the solution
+                            }
+                        }
+
+                        // found a solution with better cost than prior
+                        OMPL_INFORM("Found solution with cost %.2f", solution->accCost_.value());
+                        OMPL_INFORM("Number of segments %i", solution->cost);
+                        sufficientlyShort = opt_->isSatisfied(solution->accCost_);
+                        if (sufficientlyShort)
+                            break;
+                    }
+                    if (solution == nullptr && dist < approxdif)
+                    {
+                        approxdif = dist;
+                        approxsol = motion;
+
+                        for (auto &i : prevSolution_)
+                            if (i)
+                                si_->freeState(i);
+                        prevSolution_.clear();
+                        for (auto &prevSolutionControl : prevSolutionControls_)
+                            if (prevSolutionControl)
+                                siC_->freeControl(prevSolutionControl);
+                        prevSolutionControls_.clear();
+                        prevSolutionSteps_.clear();
+
+                        Motion *solTrav = approxsol;
+                        while (solTrav->parent_ != nullptr)
+                        {
+                            prevSolution_.push_back(si_->cloneState(solTrav->state_));
+                            prevSolutionControls_.push_back(siC_->cloneControl(solTrav->control_));
+                            prevSolutionSteps_.push_back(solTrav->steps_);
+                            solTrav = solTrav->parent_;
+                        }
+                        prevSolution_.push_back(si_->cloneState(solTrav->state_));
+                    }
+
+                    if (oldRep != rmotion)
+                    {
+                        while (oldRep->inactive_ && oldRep->numChildren_ == 0)
+                        {
+                            oldRep->inactive_ = true;
+                            nn_->remove(oldRep);
+
+                            if (oldRep->state_)
+                                si_->freeState(oldRep->state_);
+                            if (oldRep->control_)
+                                siC_->freeControl(oldRep->control_);
+
+                            oldRep->state_ = nullptr;
+                            oldRep->control_ = nullptr;
+                            oldRep->parent_->numChildren_--;
+                            Motion *oldRepParent = oldRep->parent_;
+                            delete oldRep;
+                            oldRep = oldRepParent;
+                        }
+                    }
                 }
             }
         }
+        iterations++;
     }
 
-    bool solved = false;
-    bool approximate = false;
+    
     if (solution == nullptr)
     {
         solution = approxsol;
         approximate = true;
     }
 
-    Motion *last = solution;
-    
-
-
     if (solution != nullptr)
     {
         lastGoalMotion_ = solution;
         Motion *lm = solution;
-        // std::cout << lm->LocationsOfIntersect.size() << std::endl;
-        // FindTotalIntersections(lm);
-        // int MotionCost = FindTotalSegments(lm);
-        // std::cout << MotionCost << std::endl;
-        // FindTotalIntersections(lastGoalMotion_);
+
         std::vector<Motion *> mpath;
         while (solution != nullptr)
         {
             // std::cout << solution->GetCost() << std::endl;
             mpath.push_back(solution);
-            solution = solution->parent;
+            solution = solution->parent_;
         }
-
         /* set the solution path */
-        // note that we use a different PathControl class
-        // see MAPSRRTPathControl for more informaiton
+        // auto path(std::make_shared<PathControl>(si_));
         auto path(std::make_shared<MAPSRRTPathControl>(si_));
-        // auto path(std::make_shared<PathControl>(si_));
-        // auto path(std::make_shared<PathControl>(si_));
+
         FinalCost_ = mpath[0]->GetCost();
+
+        SolName_ = "txt/SST/path" + std::to_string(lastGoalMotion_->accCost_.value()) + ".txt";
+
         for (int i = mpath.size() - 1; i >= 0; --i)
-            if (mpath[i]->parent)
+            if (mpath[i]->parent_)
             {
                 //  additional method added by Justin Kottinger
-                path->append(mpath[i]->state, mpath[i]->control, mpath[i]->steps * siC_->getPropagationStepSize(), mpath[i]->GetCost());
+                path->append(mpath[i]->state_, mpath[i]->control_, mpath[i]->steps_ * siC_->getPropagationStepSize(), mpath[i]->GetCost());
                 // path->append(mpath[i]->state, mpath[i]->control, mpath[i]->steps * siC_->getPropagationStepSize());
             }
             else
             {
                 // the root node does not have a parent
-                path->append(mpath[i]->state, mpath[i]->GetCost());
+                path->append(mpath[i]->state_, mpath[i]->GetCost());
                 
             }
+            // previous
+            // path->append(prevSolution_[i], prevSolutionControls_[i - 1],
+            //              prevSolutionSteps_[i - 1] * siC_->getPropagationStepSize());
+        // not sure why this is here yet
+        path->append(prevSolution_[0]);
         solved = true;
+        pdef_->addSolutionPath(path, approximate, approxdif, getName());
+    
         if (benchmark_ == false)
+            pdef_->addSolutionPath(path, approximate, approxdif, getName());
+        std::ofstream PathFile;
+        PathFile.open(SolName_);
+        if (PathFile.fail())
         {
-        	pdef_->addSolutionPath(path, approximate, approxdif, getName());
-
-            std::ofstream PathFile;
-            PathFile.open(SolName_);
-            if (PathFile.fail())
-            {
-              std::cerr << "ERROR: Could not open path.txt" << std::endl;
-              exit(1);
-            }
-            else
-            {
-              OMPL_INFORM("Writing solution to path.txt");
-              // PathFile << data << std::endl;
-              path->printAsMatrix(PathFile);
-              PathFile.close();
-              OMPL_INFORM("Computation completed successfully");
-              // path.print(std::cout);  // this prints out the solution
-            }
+          std::cerr << "ERROR: Could not open path.txt" << std::endl;
+          exit(1);
         }
-        
+        else
+        {
+          OMPL_INFORM("Writing solution to path.txt");
+          // PathFile << data << std::endl;
+          path->printAsMatrix(PathFile);
+          PathFile.close();
+          OMPL_INFORM("Computation completed successfully");
+          // path.print(std::cout);  // this prints out the solution
+        }
     }
 
-    if (rmotion->state)
-        si_->freeState(rmotion->state);
-    if (rmotion->control)
-        siC_->freeControl(rmotion->control);
-    delete rmotion;
     si_->freeState(xstate);
-    OMPL_INFORM("%s: Time Spent Segmentating %f", getName().c_str(), time_);
-    OMPL_INFORM("%s: Created %u states", getName().c_str(), nn_->size());
-    // To see the error from exact sol to sol found
-    OMPL_INFORM("%s: Solution Tollorance was %f", getName().c_str(), approxdif);
+    if (rmotion->state_)
+        si_->freeState(rmotion->state_);
+    if (rmotion->control_)
+        siC_->freeControl(rmotion->control_);
+    delete rmotion;
+
     OMPL_INFORM("%s: Solution can explained in %i segment(s)", getName().c_str(), FinalCost_);
+    OMPL_INFORM("%s: Created %u states in %u iterations", getName().c_str(), nn_->size(), iterations);
+
     return base::PlannerStatus(solved, approximate);
 }
 
-void ompl::control::MAPSRRTcost::getPlannerData(base::PlannerData &data) const
+void ompl::control::MAPSSST::getPlannerData(base::PlannerData &data) const
 {
     Planner::getPlannerData(data);
 
     std::vector<Motion *> motions;
+    std::vector<Motion *> allMotions;
     if (nn_)
         nn_->list(motions);
 
+    for (auto &motion : motions)
+    {
+        if (motion->numChildren_ == 0)
+        {
+            allMotions.push_back(motion);
+        }
+    }
+    for (unsigned i = 0; i < allMotions.size(); i++)
+    {
+        if (allMotions[i]->parent_ != nullptr)
+        {
+            allMotions.push_back(allMotions[i]->parent_);
+        }
+    }
+
     double delta = siC_->getPropagationStepSize();
 
-    if (lastGoalMotion_)
-        data.addGoalVertex(base::PlannerDataVertex(lastGoalMotion_->state));
+    if (prevSolution_.size() != 0)
+        data.addGoalVertex(base::PlannerDataVertex(prevSolution_[0]));
 
-    for (auto m : motions)
+    for (auto m : allMotions)
     {
-        if (m->parent)
+        if (m->parent_)
         {
             if (data.hasControls())
-                data.addEdge(base::PlannerDataVertex(m->parent->state), base::PlannerDataVertex(m->state),
-                             control::PlannerDataEdgeControl(m->control, m->steps * delta));
+                data.addEdge(base::PlannerDataVertex(m->parent_->state_), base::PlannerDataVertex(m->state_),
+                             control::PlannerDataEdgeControl(m->control_, m->steps_ * delta));
             else
-                data.addEdge(base::PlannerDataVertex(m->parent->state), base::PlannerDataVertex(m->state));
+                data.addEdge(base::PlannerDataVertex(m->parent_->state_), base::PlannerDataVertex(m->state_));
         }
         else
-            data.addStartVertex(base::PlannerDataVertex(m->state));
+            data.addStartVertex(base::PlannerDataVertex(m->state_));
     }
 }

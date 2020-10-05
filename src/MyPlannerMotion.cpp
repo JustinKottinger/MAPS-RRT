@@ -97,7 +97,7 @@ ompl::control::MAPSRRTmotion::MAPSRRTmotion(const ompl::control::SpaceInformatio
     Planner::declareParam<bool>("intermediate_states", this, &MAPSRRTmotion::setIntermediateStates, &MAPSRRTmotion::getIntermediateStates);
 
     addPlannerProgressProperty("best cost REAL", [this] { return FinalCostProperty(); });
-    
+    addPlannerProgressProperty("segmenting time REAL", [this] { return FinalTimeProperty(); });
 
 }
 
@@ -513,6 +513,8 @@ std::vector<double> ompl::control::MAPSRRTmotion::getDistance(const base::State 
         distance = ThreeLinearDistance(st);
     else if (model_ == "3Unicycle")
         distance = ThreeUnicycleDistance(st);
+    else if (model_ == "3KinematicCars")
+        distance = ThreeKinDistance(st);
     else
     {
         std::cout << "Current Model Not Implemented." << std::endl;
@@ -520,6 +522,34 @@ std::vector<double> ompl::control::MAPSRRTmotion::getDistance(const base::State 
     }
     return distance;
 }
+
+std::vector<double> ompl::control::MAPSRRTmotion::ThreeKinDistance(const ob::State *st)
+{
+    
+    std::vector<double> distance;
+    auto cs_ = st->as<ompl::base::CompoundStateSpace::StateType>();
+    auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+    auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
+    auto xyState3_ = cs_->as<ob::RealVectorStateSpace::StateType>(4);
+
+    double deltax_v1 = pow((g[0] - xyState1_->values[0]), 2);
+    double deltay_v1 = pow((g[1] - xyState1_->values[1]), 2);
+    double deltax_v2 = pow((g[4] - xyState2_->values[0]), 2);
+    double deltay_v2 = pow((g[5] - xyState2_->values[1]), 2);
+    double deltax_v3 = pow((g[8] - xyState3_->values[0]), 2);
+    double deltay_v3 = pow((g[9] - xyState3_->values[1]), 2);
+
+    double d1 = sqrt(deltax_v1 + deltay_v1);
+    double d2 = sqrt(deltax_v2 + deltay_v2);
+    double d3 = sqrt(deltax_v3 + deltay_v3);
+
+    distance.push_back(d1);
+    distance.push_back(d2);
+    distance.push_back(d3);
+
+    return distance;
+}
+
 std::vector<double> ompl::control::MAPSRRTmotion::ThreeUnicycleDistance(const ob::State *st)
 {
     
@@ -702,7 +732,7 @@ int ompl::control::MAPSRRTmotion::MultiAgentControlSampler(Motion *motion,Contro
 void ompl::control::MAPSRRTmotion::overrideStates(const std::vector<int> DoNotProp, const base::State *source, 
     base::State *result, Control *control)
 {
-    if (model_ == "2KinematicCars")
+    if (model_ == "2KinematicCars" || model_ == "3KinematicCars")
         OverrideKinCars(DoNotProp, source, result, control);
     else if ((model_ == "2Linear") || (model_ == "3Linear"))
         OverrideLinCars(DoNotProp, source, result, control);
@@ -873,7 +903,7 @@ void ompl::control::MAPSRRTmotion::OverrideKinCars(const std::vector<int> DoNotP
 std::vector<Point> ompl::control::MAPSRRTmotion::MakeLinearPath(const base::State *st) const
 {
     std::vector<Point> VehiclePoints;
-    if (model_ == "2KinematicCars")
+    if (model_ == "2KinematicCars" || model_ == "3KinematicCars")
         VehiclePoints = MakeKinPath(st);
     else if ((model_ == "2Linear") || (model_ == "3Linear"))
         VehiclePoints = MakeLinPath(st);
@@ -987,7 +1017,7 @@ std::vector<Point> ompl::control::MAPSRRTmotion::MakeKinPath(const base::State *
 void ompl::control::MAPSRRTmotion::Get2DimDistance(Motion *motion, const base::State *source, 
     const base::State *result)
 {
-    if ((model_ == "2KinematicCars") || (model_ == "3Unicycle"))
+    if ((model_ == "2KinematicCars") || (model_ == "3Unicycle") || model_ == "3KinematicCars")
         Get2DimDist2KinCars(motion, source, result);
     else if ((model_ == "2Linear") || (model_ == "3Linear"))
         Get2DimDist2LinCars(motion, source, result);
@@ -1200,6 +1230,8 @@ unsigned int ompl::control::MAPSRRTmotion::propagateWhileValid(Motion *motion,co
 
 void ompl::control::MAPSRRTmotion::FindTotalIntersections(Motion *NewMotion)
 {
+    std::clock_t start, end; 
+    start = std::clock(); 
     // bool intersect
     int NumIntersect = Project2D(NewMotion);
 
@@ -1212,6 +1244,10 @@ void ompl::control::MAPSRRTmotion::FindTotalIntersections(Motion *NewMotion)
         NewMotion->NumIntersections = ParentIntersections + NumIntersect;
     else
         NewMotion->NumIntersections = ParentIntersections;
+
+    end = std::clock();
+    double time_taken = double(end - start) / double(CLOCKS_PER_SEC);
+    time_ = time_ + time_taken;
 }
 
 int ompl::control::MAPSRRTmotion::Project2D(Motion *NewMotion)
@@ -1666,6 +1702,8 @@ int ompl::control::MAPSRRTmotion::Project2D_2Vehicles(Motion *NewMotion)
 
 unsigned int ompl::control::MAPSRRTmotion::FindTotalPathCost(Motion *LastMotion)
 {
+    std::clock_t start, end; 
+    start = std::clock(); 
     // std::cout << "beginning cost calc" << std::endl;
     // std::cout << "in here" << std::endl;
     Motion *CurrMotion = LastMotion;
@@ -1749,6 +1787,9 @@ unsigned int ompl::control::MAPSRRTmotion::FindTotalPathCost(Motion *LastMotion)
     }
     // CurrMotion->parent->SetCost(NumSegs);
     CurrMotion->SetCost(NumSegs);
+    end = std::clock();
+    double time_taken = double(end - start) / double(CLOCKS_PER_SEC);
+    time_ = time_ + time_taken;
     // std::cout << "out" << std::endl;
     return NumSegs;
 }
@@ -1804,6 +1845,7 @@ std::vector<bool> ompl::control::MAPSRRTmotion::CheckSegmentationTest(Motion *mo
         }
 	}
 	info.push_back(false);
+
 	return info;
 }
 
@@ -2143,22 +2185,24 @@ ompl::base::PlannerStatus ompl::control::MAPSRRTmotion::solve(const base::Planne
             }
         solved = true;
         if (benchmark_ == false)
+        {
         	pdef_->addSolutionPath(path, approximate, approxdif, getName());
-        std::ofstream PathFile;
-        PathFile.open("txt/path.txt");
-        if (PathFile.fail())
-        {
-          std::cerr << "ERROR: Could not open path.txt" << std::endl;
-          exit(1);
-        }
-        else
-        {
-          OMPL_INFORM("Writing solution to path.txt");
-          // PathFile << data << std::endl;
-          path->printAsMatrix(PathFile);
-          PathFile.close();
-          OMPL_INFORM("Computation completed successfully");
-          // path.print(std::cout);  // this prints out the solution
+            std::ofstream PathFile;
+            PathFile.open("txt/path.txt");
+            if (PathFile.fail())
+            {
+              std::cerr << "ERROR: Could not open path.txt" << std::endl;
+              exit(1);
+            }
+            else
+            {
+              OMPL_INFORM("Writing solution to path.txt");
+              // PathFile << data << std::endl;
+              path->printAsMatrix(PathFile);
+              PathFile.close();
+              OMPL_INFORM("Computation completed successfully");
+              // path.print(std::cout);  // this prints out the solution
+            }
         }
     }
 
@@ -2169,6 +2213,7 @@ ompl::base::PlannerStatus ompl::control::MAPSRRTmotion::solve(const base::Planne
     delete rmotion;
     si_->freeState(xstate);
 
+    OMPL_INFORM("%s: Time Spent Segmentating %f", getName().c_str(), time_);
     OMPL_INFORM("%s: Created %u states", getName().c_str(), nn_->size());
     // To see the error from exact sol to sol found
     OMPL_INFORM("%s: Solution Error was %f", getName().c_str(), approxdif);

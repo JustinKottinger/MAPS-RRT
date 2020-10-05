@@ -65,6 +65,48 @@ class TwoKinematicCarsModel
         double carWidth_;
         
 };
+
+// this is the class I want to use to project my states into 2Dprojections of vehicles
+class ThreeKinematicCarsModel
+{
+    public:
+        ThreeKinematicCarsModel(const ob::State *state)
+        {
+            // get the compound space
+            cs_ = state->as<ompl::base::CompoundStateSpace::StateType>();
+            // gather the xy-position of both vehicles
+            xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+            xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
+            xyState3_ = cs_->as<ob::RealVectorStateSpace::StateType>(4);
+            // gather the theta value of both vehicles
+            rot1_ = cs_->as<ob::SO2StateSpace::StateType>(1);
+            rot2_ = cs_->as<ob::SO2StateSpace::StateType>(3);
+            rot3_ = cs_->as<ob::SO2StateSpace::StateType>(5);
+
+            const int NumVs_ = 3;
+            carLength_ = 0.2;
+            carWidth_ = 0.2;
+        }
+        // 
+
+        // this function reutrns a vector of polygons in their respective states
+        std::vector<polygon> GetPolygons();
+
+    protected:
+        const ob::SO2StateSpace::StateType *rot1_;
+        const ob::SO2StateSpace::StateType *rot2_;
+        const ob::SO2StateSpace::StateType *rot3_;
+        const ob::RealVectorStateSpace::StateType *xyState1_;
+        const ob::RealVectorStateSpace::StateType *xyState2_;
+        const ob::RealVectorStateSpace::StateType *xyState3_;
+        const ompl::base::CompoundStateSpace::StateType *cs_;
+        // const int NumVs_;         
+        double carLength_;
+        double carWidth_;
+        
+};
+
+
 void list_coordinates(point const& p);
 
 // Definition of the ODE for the kinematic car.
@@ -80,11 +122,18 @@ const oc::Control* /*control*/, const double /*duration*/, ob::State *result);
 void TwoKinematicCarsODE (const oc::ODESolver::StateType& q, 
     const oc::Control* control, oc::ODESolver::StateType& qdot);
 
+// Definition of ODe for 2kinematic car ODE
+void ThreeKinematicCarsODE (const oc::ODESolver::StateType& q, 
+    const oc::Control* control, oc::ODESolver::StateType& qdot);
+
+
 // This is a callback method invoked after numerical integration.
 // normalizes angle for two vehicles
 void postProp_TwoKinematicCars(const ob::State *q, const oc::Control *ctl, 
     const double duration, ob::State *qnext);
 
+void postProp_ThreeKinematicCars(const ob::State *q, const oc::Control *ctl, 
+    const double duration, ob::State *qnext);
 
 // this class is currenlty being used to integrate during planning
 // could be integrated into the class above in the future
