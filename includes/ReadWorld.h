@@ -13,3 +13,5 @@ void MyPrint(std::vector<double> vec);
 
 
 void print(std::vector<std::string> const &vec);
+
+int getSolutionCost();

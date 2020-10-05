@@ -1,7 +1,7 @@
 /*********************************************************************
 * Software License Agreement (BSD License)
 *
-*  Copyright (c) 2008, Willow Garage, Inc.
+*  Copyright (c) 2011, Rice University
 *  All rights reserved.
 *
 *  Redistribution and use in source and binary forms, with or without
@@ -14,7 +14,7 @@
 *     copyright notice, this list of conditions and the following
 *     disclaimer in the documentation and/or other materials provided
 *     with the distribution.
-*   * Neither the name of the Willow Garage nor the names of its
+*   * Neither the name of the Rice University nor the names of its
 *     contributors may be used to endorse or promote products derived
 *     from this software without specific prior written permission.
 *
@@ -32,15 +32,21 @@
 *  POSSIBILITY OF SUCH DAMAGE.
 *********************************************************************/
 
-/* Author: Justin Kottinger */
+/* Author: Ryan Luna */
 
-// #ifndef OMPL_CONTROL_PLANNERS_RRT_RRT_
-// #define OMPL_CONTROL_PLANNERS_RRT_RRT_
+#ifndef OMPL_CONTROL_PLANNERS_MAPSEST_MAPSEST_
+#define OMPL_CONTROL_PLANNERS_MAPSEST_MAPSEST_
 
-// #include "ompl/control/planners/rrt/RRT.h"
+#include "ompl/datastructures/Grid.h"
 #include "ompl/control/planners/PlannerIncludes.h"
-#include "ompl/datastructures/NearestNeighbors.h"
+#include "ompl/base/ProjectionEvaluator.h"
+#include "ompl/datastructures/PDF.h"
+#include <unordered_map>
+#include <vector>
+// my includes
 #include <boost/geometry.hpp>
+#include <boost/geometry/geometries/geometries.hpp>
+
 
 namespace ob = ompl::base;
 namespace oc = ompl::control;
@@ -51,56 +57,54 @@ typedef bg::model::point<double, 2, bg::cs::cartesian> Point;
 typedef boost::geometry::model::segment<Point> Segment;
 typedef bg::model::polygon<Point> polygon;
 
-
 namespace ompl
 {
     namespace control
     {
         /**
-           @anchor cRRT
+           @anchor cMAPSEST
            @par Short description
-           RRT is a tree-based motion planner that uses the following
-           idea: RRT samples a random state @b qr in the state space,
-           then finds the state @b qc among the previously seen states
-           that is closest to @b qr and expands from @b qc towards @b
-           qr, until a state @b qm is reached. @b qm is then added to
-           the exploration tree.
-           This implementation is intended for systems with differential constraints.
+           MAPSEST is a tree-based motion planner that attempts to detect
+           the less explored area of the space through the use of a
+           grid imposed on a projection of the state space. Using this
+           information, MAPSEST continues tree expansion primarily from
+           less explored areas.  It is important to set the projection
+           the algorithm uses (setProjectionEvaluator() function). If
+           no projection is set, the planner will attempt to use the
+           default projection associated to the state space. An
+           exception is thrown if no default projection is available
+           either.
            @par External documentation
-           S.M. LaValle and J.J. Kuffner, Randomized kinodynamic planning, <em>Intl. J. of Robotics Research</em>, vol.
-           20, pp. 378–400, May 2001. DOI: [10.1177/02783640122067453](http://dx.doi.org/10.1177/02783640122067453)<br>
-           [[PDF]](http://ijr.sagepub.com/content/20/5/378.full.pdf)
-           [[more]](http://msl.cs.uiuc.edu/~lavalle/rrtpubs.html)
+           D. Hsu, J.-C. Latombe, and R. Motwani, Path planning in expansive configuration spaces,
+           <em>Intl. J. Computational Geometry and Applications</em>,
+           vol. 9, no. 4-5, pp. 495–512, 1999. DOI:
+           [10.1142/S0218195999000285](http://dx.doi.org/10.1142/S0218195999000285)<br>
+           [[PDF]](http://bigbird.comp.nus.edu.sg/pmwiki/farm/motion/uploads/Site/ijcga96.pdf)
         */
 
-        /** \brief Rapidly-exploring Random Tree */
-        class MAPSRRTcost : public base::Planner
+        /** \brief Expansive Space Trees */
+        class MAPSEST : public base::Planner
         {
         public:
             /** \brief Constructor */
-            MAPSRRTcost(const ompl::control::SpaceInformationPtr &si, 
-                int NumVehicles, int NumControls, int DimofEachVehicle, 
-                int MaxSegments, std::vector<double> goal, double radius, 
-                bool benchmark, std::string model, unsigned int k = 1, 
+            MAPSEST(const SpaceInformationPtr &si, int NumVehicles, int NumControls, 
+                int DimofEachVehicle, int MaxSegments, std::vector<double> goal, 
+                double radius, bool benchmark, std::string model, unsigned int k = 1, 
                 std::string solutionName = "txt/path.txt");
 
-            ~MAPSRRTcost() override;
+            ~MAPSEST() override;
 
-            /** \brief Continue solving for some amount of time. Return true if solution was found. */
             base::PlannerStatus solve(const base::PlannerTerminationCondition &ptc) override;
 
-            /** \brief Clear datastructures. Call this function if the
-                input data to the planner has changed and you do not
-                want to continue planning */
             void clear() override;
 
-            /** In the process of randomly selecting states in the state
-                space to attempt to go towards, the algorithm may in fact
-                choose the actual goal state, if it knows it, with some
-                probability. This probability is a real number between 0.0
-                and 1.0; its value should usually be around 0.05 and
-                should not be too large. It is probably a good idea to use
-                the default value. */
+            /** \brief In the process of randomly selecting states in
+                the state space to attempt to go towards, the
+                algorithm may in fact choose the actual goal state, if
+                it knows it, with some probability. This probability
+                is a real number between 0.0 and 1.0; its value should
+                usually be around 0.05 and should not be too large. It
+                is probably a good idea to use the default value. */
             void setGoalBias(double goalBias)
             {
                 goalBias_ = goalBias;
@@ -112,34 +116,45 @@ namespace ompl
                 return goalBias_;
             }
 
-            /** \brief Return true if the intermediate states generated along motions are to be added to the tree itself
-             */
-            bool getIntermediateStates() const
+            /** \brief Set the range the planner is supposed to use.
+
+                This parameter greatly influences the runtime of the
+                algorithm. It represents the maximum length of a
+                motion to be added in the tree of motions. */
+            void setRange(double distance)
             {
-                return addIntermediateStates_;
+                maxDistance_ = distance;
             }
 
-            /** \brief Specify whether the intermediate states generated along motions are to be added to the tree
-             * itself */
-            void setIntermediateStates(bool addIntermediateStates)
+            /** \brief Get the range the planner is using */
+            double getRange() const
             {
-                addIntermediateStates_ = addIntermediateStates;
+                return maxDistance_;
             }
 
-            void getPlannerData(base::PlannerData &data) const override;
-
-            /** \brief Set a different nearest neighbors datastructure */
-            template <template <typename T> class NN>
-            void setNearestNeighbors()
+            /** \brief Set the projection evaluator. This class is
+                able to compute the projection of a given state.  */
+            void setProjectionEvaluator(const base::ProjectionEvaluatorPtr &projectionEvaluator)
             {
-                if (nn_ && nn_->size() != 0)
-                    OMPL_WARN("Calling setNearestNeighbors will clear all states.");
-                clear();
-                nn_ = std::make_shared<NN<Motion *>>();
-                setup();
+                projectionEvaluator_ = projectionEvaluator;
+            }
+
+            /** \brief Set the projection evaluator (select one from
+                the ones registered with the state space). */
+            void setProjectionEvaluator(const std::string &name)
+            {
+                projectionEvaluator_ = si_->getStateSpace()->getProjection(name);
+            }
+
+            /** \brief Get the projection evaluator */
+            const base::ProjectionEvaluatorPtr &getProjectionEvaluator() const
+            {
+                return projectionEvaluator_;
             }
 
             void setup() override;
+
+            void getPlannerData(base::PlannerData &data) const override;
 
         protected:
             /** \brief Representation of a motion
@@ -158,10 +173,6 @@ namespace ompl
                 }
 
                 ~Motion() = default;
-
-                // In MAPS, each motion has a cost
-                // the cost is the number of segments that are required 
-                // to explain the path with this motion
 
                 void SetCost(int a)
                 {
@@ -188,21 +199,64 @@ namespace ompl
                 int cost{1};
 
                 int NumIntersections{0};
-
+                
                 std::vector<std::vector<Point>> LinearPath;
 
                 std::vector<double> AllVehicleDistance;
 
                 std::vector<Motion *> LocationsOfIntersect;
-
-            private:
-
-                
             };
-            int MultiAgentControlSampler(Motion *motion, Control *RandCtrl, Control *previous, 
-                const base::State *source, base::State *dest);
+
+            struct MotionInfo;
+
+            /** \brief A grid cell */
+            typedef Grid<MotionInfo>::Cell GridCell;
+
+            /** \brief A PDF of grid cells */
+            typedef PDF<GridCell *> CellPDF;
+
+            /** \brief A struct containing an array of motions and a corresponding PDF element */
+            struct MotionInfo
+            {
+                Motion *operator[](unsigned int i)
+                {
+                    return motions_[i];
+                }
+                const Motion *operator[](unsigned int i) const
+                {
+                    return motions_[i];
+                }
+                void push_back(Motion *m)
+                {
+                    motions_.push_back(m);
+                }
+                unsigned int size() const
+                {
+                    return motions_.size();
+                }
+                bool empty() const
+                {
+                    return motions_.empty();
+                }
+                std::vector<Motion *> motions_;
+                CellPDF::Element *elem_;
+            };
+
+            /** \brief The data contained by a tree of exploration */
+            struct TreeData
+            {
+                TreeData() = default;
+
+                /** \brief A grid where each cell contains an array of motions */
+                Grid<MotionInfo> grid{0};
+
+                /** \brief The total number of motions in the grid */
+                unsigned int size{0};
+            };
 
             std::vector<double> getDistance(const base::State *st);
+
+            std::vector<double> TwoUnicycleDistance(const ob::State *st);
 
             std::vector<double> ThreeUnicycleDistance(const ob::State *st);
 
@@ -214,12 +268,15 @@ namespace ompl
 
             std::vector<double> ThreeKinDistance(const base::State *st);
 
+            int MultiAgentControlSampler(Motion *motion, Control *RandCtrl, Control *previous, 
+                const base::State *source, base::State *dest);
+
             unsigned int propagateWhileValid(Motion *motion, const base::State *state, Control *control,
                 int steps, base::State *result, std::vector<int> DoNotProgogate);
 
             void overrideStates(const std::vector<int> NoPropogation, const base::State *s, 
                 base::State *r, Control *control);
-            
+
             void OverrideKinCars(const std::vector<int> NoPropogation, const base::State *s, 
                 base::State *r, Control *control);
 
@@ -237,15 +294,6 @@ namespace ompl
             
             std::vector<Point> MakeLinPath(const base::State *result) const;
 
-
-            void FindTotalIntersections(Motion *motion);
-            // bool
-            int Project2D(Motion *motion);
-
-            int Project2D_3Vehicles(Motion *motion);
-
-            int Project2D_2Vehicles(Motion *motion);
-
             void Get2DimDistance(Motion *motion, const base::State *source, 
                 const base::State *result);
 
@@ -255,33 +303,54 @@ namespace ompl
             void Get2DimDist2LinCars(Motion *motion, const base::State *source, 
                 const base::State *result);
 
-            unsigned int FindTotalPathCost(Motion *motion);
+            void FindTotalIntersections(Motion *motion);
+            
+            int Project2D(Motion *motion);
 
-            std::vector<bool> CheckSegmentation(Motion *motion, int d, bool end);
+            int Project2D_3Vehicles(Motion *motion);
 
-            std::vector<bool> CheckSegmentationTest(Motion *motion, int depth);
-
-            std::vector<Motion> GenerateMotionList(Motion *motion);
-
-            std::vector<std::vector<double>> GeneratePathLengths(std::vector<Motion> CurrPath);
-
-            int FindTotalSegments(const Motion *m);
-
-            int FindTotalPathCost(const Motion *m);
-
-            const Motion * ResetProjection(const Motion *motion, int d);
-
-
-            std::vector<bool>  Project2D(const Motion *a, int d);
+            int Project2D_2Vehicles(Motion *motion);
 
             /** \brief Free the memory allocated by this planner */
             void freeMemory();
 
-            /** \brief Compute distance between motions (actually distance between contained states) */
-            double distanceFunction(const Motion *a, const Motion *b) const
-            {
-                return si_->distance(a->state, b->state);
-            }
+            /** \brief Add a motion to the exploration tree */
+            void addMotion(Motion *motion);
+
+            /** \brief Select a motion to continue the expansion of the tree from */
+            Motion *selectMotion();
+
+            /** \brief Valid state sampler */
+            base::ValidStateSamplerPtr sampler_;
+
+            /** \brief Directed control sampler */
+            DirectedControlSamplerPtr controlSampler_;
+
+            /** \brief The base::SpaceInformation cast as control::SpaceInformation, for convenience */
+            const SpaceInformation *siC_;
+
+            /** \brief The exploration tree constructed by this algorithm */
+            TreeData tree_;
+
+            /** \brief This algorithm uses a discretization (a grid) to guide the exploration. The exploration is
+             * imposed on a projection of the state space. */
+            base::ProjectionEvaluatorPtr projectionEvaluator_;
+
+            /** \brief The fraction of time the goal is picked as the state to expand towards (if such a state is
+             * available) */
+            double goalBias_{0.05};
+
+            /** \brief The maximum length of a motion to be added to a tree */
+            double maxDistance_{0.};
+
+            /** \brief The random number generator */
+            RNG rng_;
+
+            /** \brief The PDF used for selecting a cell from which to sample a motion */
+            CellPDF pdf_;
+
+            /** \brief The most recent goal motion.  Used for PlannerData computation */
+            Motion *lastGoalMotion_{nullptr};
 
             // const SpaceInformationPtr Csi_;
             std::string model_;
@@ -297,33 +366,6 @@ namespace ompl
 
             // The number of disjoint segments allowed in the solution
             int MaxSegments_;
-
-            /** \brief State sampler */
-            base::StateSamplerPtr sampler_;
-
-            /** \brief Control sampler */
-            DirectedControlSamplerPtr controlSampler_;
-
-            /** \brief The base::SpaceInformation cast as control::SpaceInformation, for convenience */
-            const SpaceInformation *siC_;
-
-            // const SpaceInformationPtr Csi_{&siC_};
-
-            /** \brief A nearest-neighbors datastructure containing the tree of motions */
-            std::shared_ptr<NearestNeighbors<Motion *>> nn_;
-
-            /** \brief The fraction of time the goal is picked as the state to expand towards (if such a state is
-             * available) */
-            double goalBias_{0.05};
-
-            /** \brief Flag indicating whether intermediate states are added to the built tree of motions */
-            bool addIntermediateStates_{false};
-
-            /** \brief The random number generator */
-            RNG rng_;
-
-            /** \brief The most recent goal motion.  Used for PlannerData computation */
-            Motion *lastGoalMotion_{nullptr};
 
             // the final cost
             int FinalCost_{0};
@@ -357,4 +399,4 @@ namespace ompl
     }
 }
 
-// #endif
+#endif

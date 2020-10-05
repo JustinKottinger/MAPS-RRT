@@ -5,7 +5,7 @@ clear; clc; close all;
 
 % read in the world
 
-WorldFilePath = "/Users/Kotti/Desktop/MAPS-RRT/txt/RSS_World_Hard_3Linear.txt";
+WorldFilePath = "/Users/Kotti/Desktop/MAPS-RRT/txt/RSS_World_2Unicycle.txt";
 [Model, Dim, NumVs, NumCtrls, Bndry, Obs, Start, Goal] = readWorld(WorldFilePath);
 % read in the Solution
 % 
@@ -49,6 +49,55 @@ if NumVs == 1
 elseif NumVs == 2 && Model == "2KinematicCars"
     NumSegs = Costs(1);
     colors = ['r', 'b'];
+    fig = 1;
+    plotEntirePath(fig, colors, Model, Start, Goal, NumVs, Dim, tolerance, Xpos, Ypos, Vpos, THpos, Controls, NumCtrls, Durations, Obs, Costs, Bndry)
+    hold on;
+    beginTime = 0;
+    currTime = 0;
+    for i = 1 : nPoints -1
+        [nCols, ~] = size(Obs);
+        nObs = nCols / 6;  % obstacle is defined by 6 points
+        for j = 1 : nObs - 1  % minus one because we started with 6 zeros
+            rectangle('Position',[Obs((6 * j) + 1, 1) Obs((6 * j) + 2, 1) ...
+                              Obs((6 * j) + 4, 1) Obs((6 * j) + 5, 1)], ...
+                          'FaceColor', "black")
+        end
+        if Costs(i + 1) ~= NumSegs
+            duration = [beginTime, currTime];
+            title("Time Period = [" + sprintf('%.1f',duration(1)) + ", " ...
+                + sprintf('%.1f',duration(2)) + "] seconds", 'FontSize', 14)
+%             filename = "solution/seg" + num2str(NumSegs);
+%             print(filename, '-dpng')
+            NumSegs = NumSegs + 1;
+            beginTime = currTime;
+            fig = fig + 1;
+            plotEntirePath(fig, colors, Model, Start, Goal, NumVs, Dim, tolerance, Xpos, Ypos, Vpos, THpos, Controls, NumCtrls, Durations, Obs, Costs, Bndry)
+        end
+        for j = 1 : NumVs
+
+            scatter(Start((Dim * (j - 1)) + 1), Start((Dim * (j - 1)) + 2), ...
+                100, colors(j), 'filled', 'DisplayName', 'Start')
+     
+            [time, StateNew] = KinematicCar(Xpos(i, j), Ypos(i, j), ...
+                THpos(i, j), ...
+                Controls(i + 1, NumCtrls*(j - 1) + 1: NumCtrls*(j - 1) + 2), ...
+                Durations(i + 1));
+            p1 = plot(StateNew(:, 1), StateNew(:, 2), 'Color', colors(j), 'LineWidth', 2);
+        end
+        currTime = currTime + Durations(i + 1);
+    end
+    duration = [beginTime, currTime];
+    title("Time Period = [" + sprintf('%.1f',duration(1)) + ", " ...
+                + sprintf('%.1f',duration(2)) + "] seconds", 'FontSize', 14)
+    xlabel("x-position", 'FontSize', 16)
+    ylabel("y-position", 'FontSize', 16)
+    axis equal;
+%     filename = "solution/seg" + num2str(NumSegs);
+%     print(filename, '-dpng')
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
+elseif NumVs == 3 && Model == "3KinematicCars"
+    NumSegs = Costs(1);
+    colors = ['r', 'b', 'g'];
     fig = 1;
     plotEntirePath(fig, colors, Model, Start, Goal, NumVs, Dim, tolerance, Xpos, Ypos, Vpos, THpos, Controls, NumCtrls, Durations, Obs, Costs, Bndry)
     hold on;
@@ -200,13 +249,63 @@ elseif NumVs == 3 && Model == "3Unicycle"
                               Obs((6 * j) + 4, 1) Obs((6 * j) + 5, 1)], ...
                           'FaceColor', "black")
         end
-        if Costs(i + 1) < NumSegs
+        if Costs(i + 1) ~= NumSegs
             duration = [beginTime, currTime];
             title("Time Period = [" + sprintf('%.1f',duration(1)) + ", " ...
                 + sprintf('%.1f',duration(2)) + "] seconds", 'FontSize', 14)
-            filename = "solution/seg" + num2str(fig);
-            print(filename, '-dpng')
+%             filename = "solution/seg" + num2str(fig);
+%             print(filename, '-dpng')
             NumSegs = NumSegs - 1;
+            beginTime = currTime;
+            fig = fig + 1;
+            plotEntirePath(fig, colors, Model, Start, Goal, NumVs, Dim, tolerance, Xpos, Ypos, Vpos, THpos, Controls, NumCtrls, Durations, Obs, Costs, Bndry)
+        end
+        for j = 1:NumVs
+            if (Controls(i + 1, NumCtrls*(j - 1) + 1) ~= 0)
+                if (Controls(i + 1, NumCtrls*(j - 1) + 2) ~= 0)
+                    scatter(Start((Dim * (j - 1)) + 1), Start((Dim * (j - 1)) + 2), ...
+                    	100, colors{j}, 'filled', 'DisplayName', 'Start')
+                    [~, StateNew] = Unicycle(Xpos(i, j), Ypos(i, j), Vpos(i, j), ...
+                        THpos(i, j), Controls(i + 1, NumCtrls*(j - 1) + 1: NumCtrls*(j - 1) + 2), ...
+                        Durations(i + 1));
+                    p1 = plot(StateNew(:, 1), StateNew(:, 2), 'Color', colors{j}, 'LineWidth', 2);
+                end
+            end
+        end
+        currTime = currTime + Durations(i + 1);
+    end
+    duration = [beginTime, currTime];
+    title("Time Period = [" + sprintf('%.1f',duration(1)) + ", " ...
+                + sprintf('%.1f',duration(2)) + "] seconds", 'FontSize', 14)
+    xlabel("x-position", 'FontSize', 16)
+    ylabel("y-position", 'FontSize', 16)
+%     axis equal;
+%     filename = "solution/seg" + num2str(fig);
+%     print(filename, '-dpng')
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+elseif NumVs == 2 && Model == "2Unicycle"
+    NumSegs = Costs(1);
+    colors = {[1, 0, 0], [0, 0, 1]};
+    fig = 1;
+    plotEntirePath(fig, colors, Model, Start, Goal, NumVs, Dim, tolerance, Xpos, Ypos, Vpos, THpos, Controls, NumCtrls, Durations, Obs, Costs, Bndry)
+    hold on;
+    beginTime = 0;
+    currTime = 0;
+    for i = 1 : nPoints -1
+        [nCols, ~] = size(Obs);
+        nObs = nCols / 6;  % obstacle is defined by 6 points
+        for j = 1 : nObs - 1  % minus one because we started with 6 zeros
+            rectangle('Position',[Obs((6 * j) + 1, 1) Obs((6 * j) + 2, 1) ...
+                              Obs((6 * j) + 4, 1) Obs((6 * j) + 5, 1)], ...
+                          'FaceColor', "black")
+        end
+        if Costs(i + 1) ~= NumSegs
+            duration = [beginTime, currTime];
+            title("Time Period = [" + sprintf('%.1f',duration(1)) + ", " ...
+                + sprintf('%.1f',duration(2)) + "] seconds", 'FontSize', 14)
+%             filename = "solution/seg" + num2str(fig);
+%             print(filename, '-dpng')
+            NumSegs = NumSegs + 1;
             beginTime = currTime;
             fig = fig + 1;
             plotEntirePath(fig, colors, Model, Start, Goal, NumVs, Dim, tolerance, Xpos, Ypos, Vpos, THpos, Controls, NumCtrls, Durations, Obs, Costs, Bndry)

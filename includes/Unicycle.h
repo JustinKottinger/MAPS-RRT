@@ -70,6 +70,42 @@ class ThreeUnicycleModels
         
 };
 
+// this is the class I want to use to project my states into 2Dprojections of vehicles
+class TwoUnicycleModels
+{
+    public:
+        TwoUnicycleModels(const ob::State *state)
+        {
+            // get the compound space
+            cs_ = state->as<ompl::base::CompoundStateSpace::StateType>();
+            // gather the xy-position of both vehicles
+            xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+            xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
+            // gather the theta value of both vehicles
+            rot1_ = cs_->as<ob::SO2StateSpace::StateType>(1);
+            rot2_ = cs_->as<ob::SO2StateSpace::StateType>(3);
+
+            const int NumVs_ = 2;
+            carLength_ = 0.01;
+            carWidth_ = 0.01;
+        }
+        // 
+
+        // this function reutrns a vector of polygons in their respective states
+        std::vector<polygon> GetPolygons();
+
+    protected:
+        const ob::SO2StateSpace::StateType *rot1_;
+        const ob::SO2StateSpace::StateType *rot2_;
+        const ob::RealVectorStateSpace::StateType *xyState1_;
+        const ob::RealVectorStateSpace::StateType *xyState2_;
+        const ompl::base::CompoundStateSpace::StateType *cs_;
+        // const int NumVs_;         
+        double carLength_;
+        double carWidth_;
+        
+};
+
 // Definition of ODe for 2kinematic car ODE
 void ThreeUnicyclesODE (const oc::ODESolver::StateType& q, 
     const oc::Control* control, oc::ODESolver::StateType& qdot);
@@ -77,6 +113,15 @@ void ThreeUnicyclesODE (const oc::ODESolver::StateType& q,
 // This is a callback method invoked after numerical integration.
 // normalizes angle for two vehicles
 void postProp_ThreeUnicycles(const ob::State *q, const oc::Control *ctl, 
+    const double duration, ob::State *qnext);
+
+// Definition of ODe for 2kinematic car ODE
+void TwoUnicyclesODE (const oc::ODESolver::StateType& q, 
+    const oc::Control* control, oc::ODESolver::StateType& qdot);
+
+// This is a callback method invoked after numerical integration.
+// normalizes angle for two vehicles
+void postProp_TwoUnicycles(const ob::State *q, const oc::Control *ctl, 
     const double duration, ob::State *qnext);
 
 

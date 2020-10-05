@@ -1,7 +1,7 @@
 /*********************************************************************
 * Software License Agreement (BSD License)
 *
-*  Copyright (c) 2008, Willow Garage, Inc.
+*  Copyright (c) 2015, Rutgers the State University of New Jersey, New Brunswick
 *  All rights reserved.
 *
 *  Redistribution and use in source and binary forms, with or without
@@ -14,7 +14,7 @@
 *     copyright notice, this list of conditions and the following
 *     disclaimer in the documentation and/or other materials provided
 *     with the distribution.
-*   * Neither the name of the Willow Garage nor the names of its
+*   * Neither the name of Rutgers University nor the names of its
 *     contributors may be used to endorse or promote products derived
 *     from this software without specific prior written permission.
 *
@@ -32,15 +32,16 @@
 *  POSSIBILITY OF SUCH DAMAGE.
 *********************************************************************/
 
-/* Author: Justin Kottinger */
+/* Authors: Justin Kottinger */
 
-// #ifndef OMPL_CONTROL_PLANNERS_RRT_RRT_
-// #define OMPL_CONTROL_PLANNERS_RRT_RRT_
+// #ifndef OMPL_CONTROL_PLANNERS_SST_SST_
+// #define OMPL_CONTROL_PLANNERS_SST_SST_
 
-// #include "ompl/control/planners/rrt/RRT.h"
 #include "ompl/control/planners/PlannerIncludes.h"
 #include "ompl/datastructures/NearestNeighbors.h"
 #include <boost/geometry.hpp>
+#include <boost/geometry/geometries/geometries.hpp>
+
 
 namespace ob = ompl::base;
 namespace oc = ompl::control;
@@ -57,35 +58,34 @@ namespace ompl
     namespace control
     {
         /**
-           @anchor cRRT
+           @anchor cSST
            @par Short description
-           RRT is a tree-based motion planner that uses the following
-           idea: RRT samples a random state @b qr in the state space,
-           then finds the state @b qc among the previously seen states
-           that is closest to @b qr and expands from @b qc towards @b
-           qr, until a state @b qm is reached. @b qm is then added to
-           the exploration tree.
-           This implementation is intended for systems with differential constraints.
+           \ref cSST "SST" (Stable Sparse RRT) is a asymptotically near-optimal incremental
+           sampling-based motion planning algorithm for systems with dynamics. It makes use
+           of random control inputs to perform a search for the best control inputs to explore
+           the state space.
            @par External documentation
-           S.M. LaValle and J.J. Kuffner, Randomized kinodynamic planning, <em>Intl. J. of Robotics Research</em>, vol.
-           20, pp. 378–400, May 2001. DOI: [10.1177/02783640122067453](http://dx.doi.org/10.1177/02783640122067453)<br>
-           [[PDF]](http://ijr.sagepub.com/content/20/5/378.full.pdf)
-           [[more]](http://msl.cs.uiuc.edu/~lavalle/rrtpubs.html)
+           Yanbo Li, Zakary Littlefield, Kostas E. Bekris, Sampling-based
+           Asymptotically Optimal Sampling-based Kinodynamic Planning.
+           [[PDF]](http://arxiv.org/abs/1407.2896)
         */
-
-        /** \brief Rapidly-exploring Random Tree */
-        class MAPSRRTmotion : public base::Planner
+        class MAPSSST : public base::Planner
         {
         public:
             /** \brief Constructor */
-            MAPSRRTmotion(const ompl::control::SpaceInformationPtr &si, int NumVehicles, int NumControls,
-                int DimofEachVehicle, int MaxSegments, std::vector<double> goal, double radius, 
-                bool benchmark, std::string model, unsigned int k = 1);
+            MAPSSST(const SpaceInformationPtr &si, int NumVehicles, int NumControls, 
+                int DimofEachVehicle, int MaxSegments, std::vector<double> goal, 
+                double radius, bool benchmark, std::string model, unsigned int k = 1, 
+                std::string solutionName = "txt/SST/path.txt");
 
-            ~MAPSRRTmotion() override;
+            ~MAPSSST() override;
+
+            void setup() override;
 
             /** \brief Continue solving for some amount of time. Return true if solution was found. */
             base::PlannerStatus solve(const base::PlannerTerminationCondition &ptc) override;
+
+            void getPlannerData(base::PlannerData &data) const override;
 
             /** \brief Clear datastructures. Call this function if the
                 input data to the planner has changed and you do not
@@ -110,21 +110,45 @@ namespace ompl
                 return goalBias_;
             }
 
-            /** \brief Return true if the intermediate states generated along motions are to be added to the tree itself
-             */
-            bool getIntermediateStates() const
+            /**
+                \brief Set the radius for selecting nodes relative to random sample.
+
+                This radius is used to mimic behavior of RRT* in that it promotes
+                extending from nodes with good path cost from the root of the tree.
+                Making this radius larger will provide higher quality paths, but has two
+                major drawbacks; exploration will occur much more slowly and exploration
+                around the boundary of the state space may become impossible. */
+            void setSelectionRadius(double selectionRadius)
             {
-                return addIntermediateStates_;
+                selectionRadius_ = selectionRadius;
             }
 
-            /** \brief Specify whether the intermediate states generated along motions are to be added to the tree
-             * itself */
-            void setIntermediateStates(bool addIntermediateStates)
+            /** \brief Get the selection radius the planner is using */
+            double getSelectionRadius() const
             {
-                addIntermediateStates_ = addIntermediateStates;
+                return selectionRadius_;
             }
 
-            void getPlannerData(base::PlannerData &data) const override;
+            /**
+                \brief Set the radius for pruning nodes.
+
+                This is the radius used to surround nodes in the witness set.
+                Within this radius around a state in the witness set, only one
+                active tree node can exist. This limits the size of the tree and
+                forces computation to focus on low path costs nodes. If this value
+                is too large, narrow passages will be impossible to traverse. In addition,
+                children nodes may be removed if they are not at least this distance away
+                from their parent nodes.*/
+            void setPruningRadius(double pruningRadius)
+            {
+                pruningRadius_ = pruningRadius;
+            }
+
+            /** \brief Get the pruning radius the planner is using */
+            double getPruningRadius() const
+            {
+                return pruningRadius_;
+            }
 
             /** \brief Set a different nearest neighbors datastructure */
             template <template <typename T> class NN>
@@ -134,10 +158,9 @@ namespace ompl
                     OMPL_WARN("Calling setNearestNeighbors will clear all states.");
                 clear();
                 nn_ = std::make_shared<NN<Motion *>>();
+                witnesses_ = std::make_shared<NN<Motion *>>();
                 setup();
             }
-
-            void setup() override;
 
         protected:
             /** \brief Representation of a motion
@@ -151,15 +174,20 @@ namespace ompl
 
                 /** \brief Constructor that allocates memory for the state and the control */
                 Motion(const SpaceInformation *si)
-                  : state(si->allocState()), control(si->allocControl())
+                  : state_(si->allocState()), control_(si->allocControl())
                 {
                 }
 
-                ~Motion() = default;
+                virtual ~Motion() = default;
 
-                // In MAPS, each motion has a cost
-                // the cost is the number of segments that are required 
-                // to explain the path with this motion
+                virtual base::State *getState() const
+                {
+                    return state_;
+                }
+                virtual Motion *getParent() const
+                {
+                    return parent_;
+                }
 
                 void SetCost(int a)
                 {
@@ -171,38 +199,66 @@ namespace ompl
                     return cost;
                 }
 
+                base::Cost accCost_{0};
+
                 /** \brief The state contained by the motion */
-                base::State *state{nullptr};
+                base::State *state_{nullptr};
 
                 /** \brief The control contained by the motion */
-                Control *control{nullptr};
+                Control *control_{nullptr};
 
-                /** \brief The number of steps the control is applied for */
-                unsigned int steps{0};
+                /** \brief The number of steps_ the control is applied for */
+                unsigned int steps_{0};
 
                 /** \brief The parent motion in the exploration tree */
-                Motion *parent{nullptr};
+                Motion *parent_{nullptr};
+
+                /** \brief Number of children */
+                unsigned numChildren_{0};
+
+                /** \brief If inactive, this node is not considered for selection.*/
+                bool inactive_{false};
 
                 int cost{1};
 
                 int NumIntersections{0};
-
+                // std::vector<>
                 std::vector<std::vector<Point>> LinearPath;
 
                 std::vector<double> AllVehicleDistance;
 
                 std::vector<Motion *> LocationsOfIntersect;
-
-            private:
-
-                
             };
-            int MultiAgentControlSampler(Motion *motion, Control *RandCtrl, Control *previous, 
-                const base::State *source, base::State *dest);
+
+            class Witness : public Motion
+            {
+            public:
+                Witness() = default;
+
+                Witness(const SpaceInformation *si) : Motion(si)
+                {
+                }
+                base::State *getState() const override
+                {
+                    return rep_->state_;
+                }
+                Motion *getParent() const override
+                {
+                    return rep_->parent_;
+                }
+
+                void linkRep(Motion *lRep)
+                {
+                    rep_ = lRep;
+                }
+
+                /** \brief The node in the tree that is within the pruning radius.*/
+                Motion *rep_{nullptr};
+            };
 
             std::vector<double> getDistance(const base::State *st);
 
-            std::vector<double> ThreeKinDistance(const ob::State *st);
+            std::vector<double> TwoUnicycleDistance(const ob::State *st);
 
             std::vector<double> ThreeUnicycleDistance(const ob::State *st);
 
@@ -212,12 +268,17 @@ namespace ompl
 
             std::vector<double> TwoKinDistance(const base::State *st);
 
+            std::vector<double> ThreeKinDistance(const base::State *st);
+
+            int MultiAgentControlSampler(Motion *motion, Control *RandCtrl, Control *previous, 
+                const base::State *source, base::State *dest);
+
             unsigned int propagateWhileValid(Motion *motion, const base::State *state, Control *control,
                 int steps, base::State *result, std::vector<int> DoNotProgogate);
 
             void overrideStates(const std::vector<int> NoPropogation, const base::State *s, 
                 base::State *r, Control *control);
-            
+
             void OverrideKinCars(const std::vector<int> NoPropogation, const base::State *s, 
                 base::State *r, Control *control);
 
@@ -235,15 +296,6 @@ namespace ompl
             
             std::vector<Point> MakeLinPath(const base::State *result) const;
 
-
-            void FindTotalIntersections(Motion *motion);
-            // bool
-            int Project2D(Motion *motion);
-
-            int Project2D_3Vehicles(Motion *motion);
-
-            int Project2D_2Vehicles(Motion *motion);
-
             void Get2DimDistance(Motion *motion, const base::State *source, 
                 const base::State *result);
 
@@ -253,26 +305,19 @@ namespace ompl
             void Get2DimDist2LinCars(Motion *motion, const base::State *source, 
                 const base::State *result);
 
-            unsigned int FindTotalPathCost(Motion *motion);
+            void FindTotalIntersections(Motion *motion);
+            
+            int Project2D(Motion *motion);
 
-            std::vector<bool> CheckSegmentation(Motion *motion, int d, bool end);
+            int Project2D_3Vehicles(Motion *motion);
 
-            std::vector<bool> CheckSegmentationTest(Motion *motion, int depth);
+            int Project2D_2Vehicles(Motion *motion);
 
-            // std::vector<Motion> GenerateMotionList(Motion *motion);
+            /** \brief Finds the best node in the tree withing the selection radius around a random sample.*/
+            Motion *selectNode(Motion *sample);
 
-            // std::vector<std::vector<double>> GeneratePathLengths(std::vector<Motion> CurrPath);
-
-            // int FindTotalSegments(const Motion *m);
-
-            // int FindTotalPathCost(const Motion *m);
-
-            // const Motion * ResetProjection(const Motion *motion, int d);
-
-
-            // std::vector<bool>  Project2D(const Motion *a, int d);
-
-            // void FindTotalIntersections(Motion *motion);
+            /** \brief Find the closest witness node to a newly generated potential node.*/
+            Witness *findClosestWitness(Motion *node);
 
             /** \brief Free the memory allocated by this planner */
             void freeMemory();
@@ -280,10 +325,47 @@ namespace ompl
             /** \brief Compute distance between motions (actually distance between contained states) */
             double distanceFunction(const Motion *a, const Motion *b) const
             {
-                return si_->distance(a->state, b->state);
+                return si_->distance(a->state_, b->state_);
             }
 
-            // const SpaceInformationPtr si_;
+            /** \brief State sampler */
+            base::StateSamplerPtr sampler_;
+
+            /** \brief Control sampler */
+            ControlSamplerPtr controlSampler_;
+
+            /** \brief The base::SpaceInformation cast as control::SpaceInformation, for convenience */
+            const SpaceInformation *siC_;
+
+            /** \brief A nearest-neighbors datastructure containing the tree of motions */
+            std::shared_ptr<NearestNeighbors<Motion *>> nn_;
+
+            /** \brief A nearest-neighbors datastructure containing the tree of witness motions */
+            std::shared_ptr<NearestNeighbors<Motion *>> witnesses_;
+
+            /** \brief The fraction of time the goal is picked as the state to expand towards (if such a state is
+             * available) */
+            double goalBias_{0.05};
+
+            /** \brief The radius for determining the node selected for extension. */
+            double selectionRadius_{0.2};
+
+            /** \brief The radius for determining the size of the pruning region. */
+            double pruningRadius_{0.1};
+
+            /** \brief The random number generator */
+            RNG rng_;
+
+            /** \brief The best solution we found so far. */
+            std::vector<base::State *> prevSolution_;
+            std::vector<Control *> prevSolutionControls_;
+            std::vector<unsigned> prevSolutionSteps_;
+
+            /** \brief The best solution cost we found so far. */
+            base::Cost prevSolutionCost_;
+
+            /** \brief The optimization objective. */
+            base::OptimizationObjectivePtr opt_;
 
             // const SpaceInformationPtr Csi_;
             std::string model_;
@@ -300,41 +382,20 @@ namespace ompl
             // The number of disjoint segments allowed in the solution
             int MaxSegments_;
 
-            /** \brief State sampler */
-            base::StateSamplerPtr sampler_;
-
-            /** \brief Control sampler */
-            DirectedControlSamplerPtr controlSampler_;
-
-            /** \brief The base::SpaceInformation cast as control::SpaceInformation, for convenience */
-            const SpaceInformation *siC_;
-
-            // const SpaceInformationPtr Csi_{&siC_};
-
-            /** \brief A nearest-neighbors datastructure containing the tree of motions */
-            std::shared_ptr<NearestNeighbors<Motion *>> nn_;
-
-            /** \brief The fraction of time the goal is picked as the state to expand towards (if such a state is
-             * available) */
-            double goalBias_{0.05};
-
-            /** \brief Flag indicating whether intermediate states are added to the built tree of motions */
-            bool addIntermediateStates_{false};
-
-            /** \brief The random number generator */
-            RNG rng_;
+            // the final cost
+            int FinalCost_{0};
 
             /** \brief The most recent goal motion.  Used for PlannerData computation */
             Motion *lastGoalMotion_{nullptr};
-
-            // the final cost
-            int FinalCost_{0};
 
             // the goal vector
             std::vector<double> g;
 
             // the goal radius
             double radius_;
+
+            // text file name
+            std::string SolName_;
 
             // number of samples
             unsigned int numControlSamples_;
