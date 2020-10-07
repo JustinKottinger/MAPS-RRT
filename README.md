@@ -1,3 +1,3 @@
-# MAPS-RRT
+# MAPS-X
 
-Multi-Agent Path Segmentating RRT is a motion planner used to explain motion plans for multi-agent robotic systems with continuous dynamics. It explains the path to a human designer/operator by using a collection of disjoint motion plans. 
+Multi-Agent Path Segmentating-X is a motion planning framework used to explain motion plans for multi-agent robotic systems governed by continuous dynamics. It explains the path to a human designer/operator by using a collection of disjoint motion plans rather than explaining the entire trajectory at once. The reasoning behind this is to remove the "guess work" behind validating multi-agent paths by showing how each agent evolves in the workspace over time. Science has shown us that recognizing (non-)intersecting lines happens very early in our cognative processs. MAPS-X leverages this fact by presenting the plan in dijoint trajectory segments, allowing us to validate motion plans very quickly and efficiently. 
