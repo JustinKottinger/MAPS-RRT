@@ -9,10 +9,11 @@ WorldFilePath = "/Users/Kotti/Desktop/MAPS-RRT/txt/RSS_World_2Unicycle.txt";
 [Model, Dim, NumVs, NumCtrls, Bndry, Obs, Start, Goal] = readWorld(WorldFilePath);
 % read in the Solution
 % 
-SolFilePath = "/Users/Kotti/Desktop/MAPS-RRT/txt/path.txt";
+SolFilePath = "/Users/Kotti/Desktop/MAPS-RRT/txt/SST/path124.742686.txt";
 [Xpos, Ypos, Vpos, THpos, Controls, Durations, Costs, path] = ...
     readPath(SolFilePath, Model, Dim, NumCtrls, NumVs);
 % 
+
 [nPoints, ~] = size(Xpos);
 
 tolerance = 1.0;

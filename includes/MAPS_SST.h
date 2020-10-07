@@ -41,6 +41,7 @@
 #include "ompl/datastructures/NearestNeighbors.h"
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/geometries.hpp>
+#include <limits>
 
 
 namespace ob = ompl::base;
@@ -75,8 +76,10 @@ namespace ompl
             /** \brief Constructor */
             MAPSSST(const SpaceInformationPtr &si, int NumVehicles, int NumControls, 
                 int DimofEachVehicle, int MaxSegments, std::vector<double> goal, 
-                double radius, bool benchmark, std::string model, unsigned int k = 1, 
-                std::string solutionName = "txt/SST/path.txt");
+                double radius, bool benchmark, std::string model, 
+                std::string solutionName = "txt/SST/path.txt",  
+                double maxLength = std::numeric_limits<double>::infinity(), 
+                unsigned int k = 1);
 
             ~MAPSSST() override;
 
@@ -162,6 +165,11 @@ namespace ompl
                 setup();
             }
 
+            const double getFinalPathLength() const
+            {
+                return lastGoalMotion_->GetaccCost();
+            }
+
         protected:
             /** \brief Representation of a motion
 
@@ -197,6 +205,11 @@ namespace ompl
                 int GetCost() const
                 {
                     return cost;
+                }
+
+                double GetaccCost() const
+                {
+                    return accCost_.value();
                 }
 
                 base::Cost accCost_{0};
@@ -396,6 +409,9 @@ namespace ompl
 
             // text file name
             std::string SolName_;
+
+            // max length bound
+            double maxLength_;
 
             // number of samples
             unsigned int numControlSamples_;
