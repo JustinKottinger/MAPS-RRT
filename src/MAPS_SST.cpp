@@ -67,8 +67,8 @@ namespace bg = boost::geometry;
 ompl::control::MAPSSST::MAPSSST(const SpaceInformationPtr &si, 
     int NumVehicles, int NumControls, int DimofEachVehicle,
     int MaxSegments, std::vector<double> goal, double radius, 
-    bool benchmark,  std::string model, unsigned int k, 
-    std::string solutionName) : base::Planner(si, "SST")
+    bool benchmark,  std::string model, std::string solutionName, 
+    double maxLength, unsigned int k) : base::Planner(si, "SST")
 {
     specs_.approximateSolutions = true;
     siC_ = si.get();
@@ -86,6 +86,7 @@ ompl::control::MAPSSST::MAPSSST(const SpaceInformationPtr &si,
     time_ = 0.0;
     radius_ = radius;
     SolName_ = solutionName;
+    maxLength_ = maxLength;
 
     Planner::declareParam<double>("goal_bias", this, &MAPSSST::setGoalBias, &MAPSSST::getGoalBias, "0.:.05:1.");
     Planner::declareParam<double>("selection_radius", this, &MAPSSST::setSelectionRadius, &MAPSSST::getSelectionRadius, "0.:.1:"
@@ -1483,6 +1484,9 @@ ompl::base::PlannerStatus ompl::control::MAPSSST::solve(const base::PlannerTermi
     base::Goal *goal = pdef_->getGoal().get();
     auto *goal_s = dynamic_cast<base::GoalSampleableRegion *>(goal);
 
+    std::cout << "Selection Radius: " << selectionRadius_ << std::endl;
+    std::cout << "Pruning Radius: " << pruningRadius_ << std::endl;
+
     while (const base::State *st = pis_.nextStart())
     {
         auto *motion = new Motion(siC_);
@@ -1534,17 +1538,18 @@ ompl::base::PlannerStatus ompl::control::MAPSSST::solve(const base::PlannerTermi
 
         /* sample a random control that attempts to go towards the random state, and also sample a control duration */
         controlSampler_->sample(rctrl);
-        unsigned int cd = rng_.uniformInt(siC_->getMinControlDuration(), siC_->getMaxControlDuration());
-        unsigned int propCd = siC_->propagateWhileValid(nmotion->state_, rctrl, cd, rstate);
+        // unsigned int cd = rng_.uniformInt(siC_->getMinControlDuration(), siC_->getMaxControlDuration());
+        // unsigned int propCd = siC_->propagateWhileValid(nmotion->state_, rctrl, cd, rstate);
         unsigned int propCd_test = MultiAgentControlSampler(rmotion, rctrl, nmotion->control_, nmotion->state_, rmotion->state_);
 
-        if (propCd_test == cd)
+        if (propCd_test >= siC_->getMinControlDuration())
         {
             base::Cost incCost = opt_->motionCost(nmotion->state_, rstate);
             base::Cost cost = opt_->combineCosts(nmotion->accCost_, incCost);
             Witness *closestWitness = findClosestWitness(rmotion);
 
-            if (closestWitness->rep_ == rmotion || opt_->isCostBetterThan(cost, closestWitness->rep_->accCost_))
+            // setting the path length bound
+            if ((cost.value() <= maxLength_) && (closestWitness->rep_ == rmotion || opt_->isCostBetterThan(cost, closestWitness->rep_->accCost_)))
             {
                 Motion *oldRep = closestWitness->rep_;
                 /* create a motion */
@@ -1552,7 +1557,7 @@ ompl::base::PlannerStatus ompl::control::MAPSSST::solve(const base::PlannerTermi
                 motion->accCost_ = cost;
                 si_->copyState(motion->state_, rmotion->state_);
                 siC_->copyControl(motion->control_, rctrl);
-                motion->steps_ = cd;
+                motion->steps_ = propCd_test;
                 motion->parent_ = nmotion;
                 nmotion->numChildren_++;
                 motion->LinearPath = rmotion->LinearPath;
@@ -1716,11 +1721,11 @@ ompl::base::PlannerStatus ompl::control::MAPSSST::solve(const base::PlannerTermi
     }
 
     
-    if (solution == nullptr)
-    {
-        solution = approxsol;
-        approximate = true;
-    }
+    // if (solution == nullptr)
+    // {
+    //     solution = approxsol;
+    //     approximate = true;
+    // }
 
     if (solution != nullptr)
     {
