@@ -1,8 +1,0 @@
-DynModel 2KinematicCars
-Dimension 3
-NumVehicles 2
-NumControls 2
-Data x1 y1 theta1 x2 y2 theta2 control1 control2 control1 control2 duration
-boundary -2 -2 -0.5233 12 12 1.5233
-start 1 1 0 1 10 0
-goal 10 10 0 10 1 0
