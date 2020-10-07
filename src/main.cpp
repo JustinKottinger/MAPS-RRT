@@ -36,6 +36,7 @@
 #include "ompl/tools/benchmark/Benchmark.h"
 #include "../includes/RRTplus.h"
 #include "../includes/MyRRT.h"
+#include <bits/stdc++.h>
 // #include "../includes/RRTplusPathControl.h"
 
 namespace ob = ompl::base;
@@ -754,17 +755,43 @@ public:
   }
   int numVs_;
   std::string model_;
+  const double x_ = 2.0;
+  const double y_ = 2.0;
  
   virtual unsigned int getDimension(void) const
   {
-      return 2;
+    if (numVs_ == 2)
+      return 4;
+    else if (numVs_ == 3)
+      return 6;
+    else
+    {
+      std::cout << "Projection Not implemented for specified number of vehicles." << std::endl;
+      exit(1);
+    }
+    
   }
  
   virtual void defaultCellSizes(void)
   {
-      cellSizes_.resize(2);
-      cellSizes_[0] = 0.1;
-      cellSizes_[1] = 0.25;
+    if (numVs_ == 2)
+    {
+      cellSizes_.resize(4);
+      cellSizes_[0] = x_;
+      cellSizes_[1] = y_;
+      cellSizes_[2] = x_;
+      cellSizes_[3] = y_;
+    }
+    else if (numVs_ == 3)
+    {
+      cellSizes_.resize(6);
+      cellSizes_[0] = x_;
+      cellSizes_[1] = y_;
+      cellSizes_[2] = x_;
+      cellSizes_[3] = y_;
+      cellSizes_[4] = x_;
+      cellSizes_[5] = y_;
+    } 
   }
 
   virtual void project(const ob::State *state, ob::EuclideanProjection &projection) const  // 
@@ -777,21 +804,25 @@ public:
           auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
           auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
   
-            // projection will be average of 2 vehicle positions
-            projection(0) = (xyState1_->values[0] + xyState2_->values[0]) / 2.0;
+            // projection will be 2 vehicles x, y pos
+            projection(0) = xyState1_->values[0];
+            projection(1) = xyState1_->values[1];
+            projection(2) = xyState2_->values[0];
+            projection(3) = xyState2_->values[1];
+        }
+        else if (numVs_ == 3)
+        {
+          auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+          auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
+          auto xyState3_ = cs_->as<ob::RealVectorStateSpace::StateType>(4);
   
-            projection(1) = (xyState1_->values[1] + xyState2_->values[1]) / 2.0;
-          }
-          else if (numVs_ == 3)
-          {
-            auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
-            auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
-            auto xyState3_ = cs_->as<ob::RealVectorStateSpace::StateType>(4);
-  
-            // projection will be average of 2 vehicle positions
-            projection(0) = (xyState1_->values[0] + xyState2_->values[0] + xyState3_->values[0]) / 3.0;
-  
-            projection(1) = (xyState1_->values[1] + xyState2_->values[1] + xyState3_->values[1]) / 3.0;
+          // projection will be average of 2 vehicle positions
+          projection(0) = xyState1_->values[0];
+          projection(1) = xyState1_->values[1];
+          projection(2) = xyState2_->values[0];
+          projection(3) = xyState2_->values[1];
+          projection(4) = xyState3_->values[0];
+          projection(5) = xyState3_->values[1];
         }
         else
         {
@@ -828,12 +859,13 @@ ob::OptimizationObjectivePtr getPathLengthObjective(const ob::SpaceInformationPt
 }
 
 
-void plan(std::string planner, std::vector<double> bndry, std::vector<double> gol, 
+bool plan(std::string planner, std::vector<double> bndry, std::vector<double> gol, 
     std::vector<double> obs, std::vector<double> start, std::string model, 
     const double planningTime, const double Radius, std::vector<std::string> data, 
     const int NumberofVehicles, const int NumberofControls, const int DimensionOfVehicle, 
     int MaxSegments, bool benchmark, std::string solutionName = "txt/path.txt")
 {
+    bool solved = false;
     oc::SimpleSetupPtr ss;
     CreateSimpleSetup(ss, bndry, gol, start, model, Radius);
 
@@ -989,7 +1021,7 @@ void plan(std::string planner, std::vector<double> bndry, std::vector<double> go
     {
     	std::cout << "all initialized, planning now" << std::endl;
       	ob::PlannerPtr planner(new oc::MAPSSST(ss->getSpaceInformation(),
-       	NumberofVehicles, NumberofControls, DimensionOfVehicle, MaxSegments, gol, Radius, benchmark, model, 1, solutionName));
+       	NumberofVehicles, NumberofControls, DimensionOfVehicle, MaxSegments, gol, Radius, benchmark, model, solutionName));
 
       	ss->setPlanner(planner);
 
@@ -1047,6 +1079,9 @@ void plan(std::string planner, std::vector<double> bndry, std::vector<double> go
     }
     else
       std::cout << "Incorrect planner selected... exiting." << std::endl;
+
+    return solved;
+
 }
 
 void benchmark(std::vector<double> bndry, std::vector<double> gol, 
@@ -1151,24 +1186,132 @@ void AO_X(std::string planner, std::vector<double> bndry, std::vector<double> go
 
   // run planner to get initial plan
   std::string solutionName = "txt/AO_X/path" + std::to_string(MaxSegments) + ".txt";
-  plan(planner, bndry, gol, obs, start, model, SolveTime, Radius, data, 
+  bool solved = plan(planner, bndry, gol, obs, start, model, SolveTime, Radius, data, 
         NumberofVehicles, NumberofControls, DimensionOfVehicle, MaxSegments, 
         benchmark, solutionName);
 
-  // get the final cost and call it c
+  
+  if (solved)
+  {
+
+    // get the final cost and call it c
+    for (int i = 0; i < numRuns; i++)
+    {
+    
+      int MaxSegments = getSolutionCost() - 1;
+      if (MaxSegments == 0 || !solved)
+        break;
+      else
+      {
+        solutionName = "txt/AO_X/path" + std::to_string(MaxSegments) + ".txt";
+        solved = plan(planner, bndry, gol, obs, start, model, SolveTime, Radius, data, 
+          NumberofVehicles, NumberofControls, DimensionOfVehicle, 
+          MaxSegments, benchmark, solutionName);
+      }
+    }
+  }
+}
+
+
+void MAPS_SST_star(std::vector<double> bndry, std::vector<double> gol, 
+    std::vector<double> obs, std::vector<double> start, std::string model, 
+    const double Radius, std::vector<std::string> data, const int NumberofVehicles, 
+    const int NumberofControls, const int DimensionOfVehicle, 
+    int numRuns, const int MaxSegs, bool benchmark, std::string solutionName = "txt/path.txt")
+{
+  // set up the problem
+  oc::SimpleSetupPtr ss;
+  CreateSimpleSetup(ss, bndry, gol, start, model, Radius);
+
+  const oc::SpaceInformationPtr si = ss->getSpaceInformation();
+
+  if (model == "KinematicCar")
+  {
+    ss->setStateValidityChecker(std::make_shared<KinematicCarStateValidityChecker>(
+      si, obs));
+  }
+  else if (model == "2KinematicCars")
+  {
+    ss->setStateValidityChecker(std::make_shared<TwoKinematicCarStateValidityChecker>(
+      si, obs));
+  }
+  else if (model == "3KinematicCars")
+  {
+    ss->setStateValidityChecker(std::make_shared<ThreeKinematicCarStateValidityChecker>(
+      si, obs));
+  }
+  else if (model == "2Linear")
+  {
+    ss->setStateValidityChecker(std::make_shared<TwoLinearCarStateValidityChecker>(
+      si, obs));
+  }
+  else if (model == "3Linear")
+  {
+    ss->setStateValidityChecker(std::make_shared<ThreeLinearCarStateValidityChecker>(
+      si, obs));
+  }
+  else if (model == "3Unicycle")
+  {
+    ss->setStateValidityChecker(std::make_shared<ThreeUnicycleStateValidityChecker>(
+      si, obs));
+    // set state validity checking for this space
+    // ss->setStateValidityChecker([](const ob::State *state) { return isStateValid_3Unicycle(state); });
+  }
+  else if (model == "2Unicycle")
+  {
+    ss->setStateValidityChecker(std::make_shared<TwoUnicycleStateValidityChecker>(
+      si, obs));
+    // set state validity checking for this space
+    // ss->setStateValidityChecker([](const ob::State *state) { return isStateValid_3Unicycle(state); });
+  }
+  else
+  {
+    std::cout << "Current State Validity Checker Not Implemented For Model." << std::endl;
+    exit(1);
+  }
+
+  ob::GoalPtr goal (new MyArbitraryGoal(ss->getSpaceInformation(), gol, Radius, model));
+
+  ss->setGoal(goal);
+
+  // set the initial path length bound to inf
+  double maxLength = std::numeric_limits<double>::infinity();
+
+  // set tuning params, decay factor, and planning time
+  const double xi = 0.5;
+  const double planningTime = 100.0;
+  double selRad = 0.2;
+  double pruneRad = 0.1;
+  int j = 0;
+  // set d and l which are dimensionality of state/input spaces respectively
+  double d = ss->getSpaceInformation()->getStateSpace()->getDimension();
+  double l = ss->getSpaceInformation()->getControlSpace()->getDimension();
+
   for (int i = 0; i < numRuns; i++)
   {
-    
-    int MaxSegments = getSolutionCost() - 1;
-    if (MaxSegments == 0)
-      break;
-    else
+    auto planner(std::make_shared<oc::MAPSSST>(ss->getSpaceInformation(), 
+    NumberofVehicles, NumberofControls, DimensionOfVehicle, MaxSegs, gol, 
+    Radius, benchmark, model, solutionName, maxLength));
+
+    planner->setSelectionRadius(selRad);
+    planner->setPruningRadius(pruneRad);
+
+    ss->setPlanner(planner);
+    ss->setup();
+
+    ob::PlannerStatus solved = ss->solve(planningTime);
+
+    if (solved)
     {
-      solutionName = "txt/AO_X/path" + std::to_string(MaxSegments) + ".txt";
-      plan(planner, bndry, gol, obs, start, model, SolveTime, Radius, data, 
-        NumberofVehicles, NumberofControls, DimensionOfVehicle, 
-        MaxSegments, benchmark, solutionName);
+      selRad = xi * selRad;
+      pruneRad = xi * pruneRad;
+      j += 1;
+      maxLength = planner->getFinalPathLength();
+      // planningTime = InitplanningTime * (1 + std::log10(j)) * pow(xi, (-(d + l + 1)*j));
+      // std::cout <<"New Planning Time: " << planningTime << std::endl;
     }
+    else
+      break;
   }
 }
 
@@ -1214,7 +1357,7 @@ int main(int /*argc*/, char ** /*argv*/)
       bool bench = false;
 
       std::cout << "Enter the planner you wish to use." << std::endl;
-      std::cout << "Choices: AO-X, MAPSRRT, MAPSEST, MAPSRRTmotion, MAPSRRTcost, MAPSSST, SST, RRT, or RRTplus" << std::endl;
+      std::cout << "Choices: AO-X, MAPSRRT, MAPSEST, MAPSRRTmotion, MAPSRRTcost, MAPSSST, MAPSSST*, SST, RRT, or RRTplus" << std::endl;
       std::cout << "Enter: ";
       std::cin >> Planner;
 
@@ -1236,6 +1379,24 @@ int main(int /*argc*/, char ** /*argv*/)
 
         AO_X(Planner, bndry, gol, obs, strt, DynModel, Tollorance, data, 
           NumVs, NumCs, dim, numRuns, bench);
+      }
+      else if (Planner == "MAPSSST*")
+      {
+        std::cout << "Enter the maximum number of segments (should be integer): ";
+        std::cin >> MaxSegments;
+
+        int numRuns;
+        std::cout << "Enter how many runs you would like to perform." << std::endl;
+        std::cout << "Note that the planner approaches true optimality as the number approaches infinity." << std::endl;
+        std::cout << "Enter: ";
+        std::cin >> numRuns;
+
+        std::cout << "Enter the radius of each vehicles goal region: ";
+        std::cin >> Tollorance;
+
+        MAPS_SST_star(bndry, gol, obs, strt, DynModel, Tollorance, data, 
+          NumVs, NumCs, dim, numRuns, MaxSegments, bench);
+
       }
 
       // enter non-MAPS planner's here
