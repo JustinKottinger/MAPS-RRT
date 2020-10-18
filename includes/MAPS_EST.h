@@ -254,19 +254,25 @@ namespace ompl
                 unsigned int size{0};
             };
 
-            std::vector<double> getDistance(const base::State *st);
+            std::vector<double> getDistance(const base::State *st) const;
 
-            std::vector<double> TwoUnicycleDistance(const ob::State *st);
+            std::vector<double> Two2ndOrderCarDistance(const ob::State *st) const;
 
-            std::vector<double> ThreeUnicycleDistance(const ob::State *st);
+            std::vector<double> Two2ndOrderLinearDistance(const ob::State *st) const;
 
-            std::vector<double> ThreeLinearDistance(const base::State *st);
+            std::vector<double> Two2ndOrderUnicycleDistance(const ob::State *st) const;
 
-            std::vector<double> TwoLinearDistance(const base::State *st);
+            std::vector<double> TwoUnicycleDistance(const ob::State *st) const;
 
-            std::vector<double> TwoKinDistance(const base::State *st);
+            std::vector<double> ThreeUnicycleDistance(const ob::State *st) const;
 
-            std::vector<double> ThreeKinDistance(const base::State *st);
+            std::vector<double> ThreeLinearDistance(const base::State *st) const;
+
+            std::vector<double> TwoLinearDistance(const base::State *st) const;
+
+            std::vector<double> TwoKinDistance(const base::State *st) const;
+
+            std::vector<double> ThreeKinDistance(const base::State *st) const;
 
             int MultiAgentControlSampler(Motion *motion, Control *RandCtrl, Control *previous, 
                 const base::State *source, base::State *dest);
@@ -286,6 +292,15 @@ namespace ompl
             void OverrideUniCars(const std::vector<int> DoNotProp, const base::State *source, 
                 base::State *result, Control *control);
 
+            void Override2ndOrderUniCars(const std::vector<int> DoNotProp, const base::State *source, 
+                base::State *result, Control *control);
+
+            void Override2ndOrderLinCars(const std::vector<int> DoNotProp, const base::State *source, 
+                base::State *result, Control *control);
+
+            void Override2ndOrderKinCars(const std::vector<int> DoNotProp, const base::State *source, 
+                base::State *result, Control *control);
+
             std::vector<Point> MakeLinearPath(const base::State *result) const;
 
             std::vector<Point> MakeUniPath(const base::State *result) const;
@@ -294,6 +309,8 @@ namespace ompl
             
             std::vector<Point> MakeLinPath(const base::State *result) const;
 
+            std::vector<Point> Make2ndOrderUniPath(const base::State *result) const;
+
             void Get2DimDistance(Motion *motion, const base::State *source, 
                 const base::State *result);
 
@@ -301,6 +318,9 @@ namespace ompl
                 const base::State *result);
 
             void Get2DimDist2LinCars(Motion *motion, const base::State *source, 
+                const base::State *result);
+
+            void Get2DimDist2ndOrderUni(Motion *motion, const base::State *source, 
                 const base::State *result);
 
             void FindTotalIntersections(Motion *motion);

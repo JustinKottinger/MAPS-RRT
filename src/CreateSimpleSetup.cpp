@@ -210,9 +210,6 @@ void CreateSimpleSetup(oc::SimpleSetupPtr& ss, std::vector<double> bndry,
 
 
     }
-
-
-
     else if (model == "3KinematicCars")
     {
         // ********************************************************************
@@ -346,9 +343,9 @@ void CreateSimpleSetup(oc::SimpleSetupPtr& ss, std::vector<double> bndry,
         // they will be the same as vehicle 2 but adding this way is more intuitve
         ob::RealVectorBounds boundsV1(2);
         boundsV1.setLow(0, bndry[0]); // x lower bound
-        boundsV1.setHigh(0, bndry[3]); // x upper bound
+        boundsV1.setHigh(0, bndry[2]); // x upper bound
         boundsV1.setLow(1, bndry[1]);  // y lower bound
-        boundsV1.setHigh(1, bndry[4]); //y upper bound
+        boundsV1.setHigh(1, bndry[3]); //y upper bound
 
 
         // set the bounds of this space 
@@ -356,9 +353,9 @@ void CreateSimpleSetup(oc::SimpleSetupPtr& ss, std::vector<double> bndry,
         // create another instance of the bounds
         ob::RealVectorBounds boundsV2(2);
         boundsV2.setLow(0, bndry[0]); // x lower bound
-        boundsV2.setHigh(0, bndry[3]); // x upper bound
+        boundsV2.setHigh(0, bndry[2]); // x upper bound
         boundsV2.setLow(1, bndry[1]);  // y lower bound
-        boundsV2.setHigh(1, bndry[4]); //y upper bound
+        boundsV2.setHigh(1, bndry[3]); //y upper bound
 
         // set the bounds of this space 
         // note the indexing change
@@ -631,7 +628,7 @@ void CreateSimpleSetup(oc::SimpleSetupPtr& ss, std::vector<double> bndry,
         // ************************* 2 Unicycle *******************************
         // ********************************************************************
 
-        // add subspace for 3 vehcicles
+        // add subspace for 2 vehcicles
         // real vector space for x1 y1 v1
         cs->addSubspace(ob::StateSpacePtr(new ob::RealVectorStateSpace(3)), 1.0);
         // next, add a SO2StateSpace for theta1
@@ -719,8 +716,292 @@ void CreateSimpleSetup(oc::SimpleSetupPtr& ss, std::vector<double> bndry,
 
         ss->setStartState(start);        
     }
+    else if (model == "2Unicycle2ndOrder")
+    {
+
+        // ********************************************************************
+        // ******************** 2 2nd Order Unicycle **************************
+        // ********************************************************************
+
+        // add subspace for 2 vehcicles
+        // real vector space for x1 y1 v1
+        cs->addSubspace(ob::StateSpacePtr(new ob::RealVectorStateSpace(3)), 1.0);
+        // next, add a SO2StateSpace for theta1
+        cs->addSubspace(ob::StateSpacePtr(new ob::SO2StateSpace()), 1.0);
+        // next, add a SO2StateSpace for omega1 (angular vel) [-1, 1]
+        cs->addSubspace(ob::StateSpacePtr(new ob::RealVectorStateSpace(1)), 1.0);
+        // real vector space for x2 y2 v2
+        cs->addSubspace(ob::StateSpacePtr(new ob::RealVectorStateSpace(3)), 1.0);
+        // next, add a SO2StateSpace for theta2
+        cs->addSubspace(ob::StateSpacePtr(new ob::SO2StateSpace()), 1.0);
+        // next, add a SO2StateSpace for omega2 (angular vel)
+        cs->addSubspace(ob::StateSpacePtr(new ob::RealVectorStateSpace(1)), 1.0);
+
+        // set the bounds for the first vehicle 
+        // they will be the same as vehicle 2 but adding this way is more intuitve
+        ob::RealVectorBounds boundsV1(3);
+        boundsV1.setLow(0, bndry[0]); // x lower bound
+        boundsV1.setHigh(0, bndry[5]); // x upper bound
+        boundsV1.setLow(1, bndry[1]);  // y lower bound
+        boundsV1.setHigh(1, bndry[6]); // y upper bound
+        boundsV1.setLow(2, bndry[2]);  // v lower bound
+        boundsV1.setHigh(2, bndry[7]); //v upper bound
+
+        // set the bounds of this space 
+        cs->as<ob::RealVectorStateSpace>(0)->setBounds(boundsV1); 
+
+        ob::RealVectorBounds boundsOmega(1);
+        boundsOmega.setLow(0, -1);
+        boundsOmega.setHigh(0, 1);
+
+        // set the bounds of this space 
+        cs->as<ob::RealVectorStateSpace>(2)->setBounds(boundsOmega); 
+        cs->as<ob::RealVectorStateSpace>(5)->setBounds(boundsOmega);
 
 
+        // set the bounds for the second vehicle 
+        // they will be the same as vehicle 2 but adding this way is more intuitve
+        ob::RealVectorBounds boundsV2(3);
+        boundsV2.setLow(0, bndry[0]); // x lower bound
+        boundsV2.setHigh(0, bndry[5]); // x upper bound
+        boundsV2.setLow(1, bndry[1]);  // y lower bound
+        boundsV2.setHigh(1, bndry[6]); //y upper bound
+        boundsV2.setLow(2, bndry[2]);  // y lower bound
+        boundsV2.setHigh(2, bndry[7]); //y upper bound
+
+        // set the bounds of this space 
+        cs->as<ob::RealVectorStateSpace>(3)->setBounds(boundsV2); 
+
+
+        // now, we need to create a control space
+        // the realvectorcontrolspace constructor needs the state space it is in and the dimension
+        //      of the control space
+        // Note the controls of a Kinematic car coorespond to the compound state space we defined 
+        // above. The constructor actually takes in the pointer so, "space" in my case.
+        //  The dimension is also 4 because we have two cars.
+        oc::ControlSpacePtr cspace(new oc::RealVectorControlSpace(space, 4));
+        // creat another instance of the bounds
+        ob::RealVectorBounds Cbounds(4);
+        // vehicle 1
+        Cbounds.setLow(0, -1);  // 1 sigma_dot lower bound
+        Cbounds.setHigh(0, 1);  // 1 sigma_dot upper bound
+        Cbounds.setLow(1, -1);  // 1 omega_dot lower bound
+        Cbounds.setHigh(1, 1);  // 1 omega_dot upper bound
+        // vehicle 2
+        Cbounds.setLow(2, -1);  // 2 sigma_dot lower bound
+        Cbounds.setHigh(2, 1);  // 2 sigma_dot upper bound
+        Cbounds.setLow(3, -1);  // 2 omega_dot lower bound
+        Cbounds.setHigh(3, 1);  // 2 omega_dot upper bound
+        
+
+
+        // Just as before, set the bounds to the proper space, this time, it is cspace and not space
+        // notice that () is empty, this is because no indexing is needed because 
+        // there is just 1 control space
+        cspace->as<oc::RealVectorControlSpace>()->setBounds(Cbounds);
+
+        // update the simple setup instance with the space we set up
+        ss.reset(new oc::SimpleSetup(cspace));
+
+        // set state propogator for multiplecars
+        auto odeSolve(std::make_shared<oc::ODEBasicSolver<>>(ss->getSpaceInformation(), 
+            &Two2ndOrderUnicyclesODE));
+
+        ss->setStatePropagator(oc::ODESolver::getStatePropagator(odeSolve, 
+            &postProp_Two2ndOrderUnicycles));
+
+        // set start and goal states
+        // analogous to setting the bounds
+        ob::ScopedState<> start(space);
+        start[0] = strt[0];
+        start[1] = strt[1];
+        start[2] = strt[2];
+        start[3] = strt[3];
+        start[4] = strt[4];
+        start[5] = strt[5];
+        start[6] = strt[6];
+        start[7] = strt[7];
+        start[8] = strt[8];
+        start[9] = strt[9];
+
+        ss->setStartState(start);        
+    }
+    else if (model == "2Linear2ndOrder")
+    {
+        // ********************************************************************
+        // ********************* 2 Linear 2nd Order ***************************
+        // ********************************************************************
+
+        // add subspace for 2 vehcicles
+        // real vector space for x1 y1 vx1 vy1
+        cs->addSubspace(ob::StateSpacePtr(new ob::RealVectorStateSpace(4)), 1.0);
+        // real vector space for x2 y2 vx2 vy2
+        cs->addSubspace(ob::StateSpacePtr(new ob::RealVectorStateSpace(4)), 1.0);
+
+        // set the bounds for the first vehicle 
+        // they will be the same as vehicle 2 but adding this way is more intuitve
+        ob::RealVectorBounds boundsV1(4);
+        boundsV1.setLow(0, bndry[0]);  // x lower bound
+        boundsV1.setHigh(0, bndry[4]); // x upper bound
+        boundsV1.setLow(1, bndry[1]);  // y lower bound
+        boundsV1.setHigh(1, bndry[5]); // y upper bound
+        boundsV1.setLow(2, bndry[2]);  // vx lower bound
+        boundsV1.setHigh(2, bndry[6]); // vx upper bound
+        boundsV1.setLow(3, bndry[3]);  // vy lower bound
+        boundsV1.setHigh(3, bndry[7]); // vy upper bound
+
+
+        // set the bounds of this space 
+        cs->as<ob::RealVectorStateSpace>(0)->setBounds(boundsV1); 
+        // create another instance of the bounds
+        ob::RealVectorBounds boundsV2(4);
+        boundsV2.setLow(0, bndry[0]);  // x lower bound
+        boundsV2.setHigh(0, bndry[4]); // x upper bound
+        boundsV2.setLow(1, bndry[1]);  // y lower bound
+        boundsV2.setHigh(1, bndry[5]); // y upper bound
+        boundsV2.setLow(2, bndry[2]);  // vx lower bound
+        boundsV2.setHigh(2, bndry[6]); // vx upper bound
+        boundsV2.setLow(3, bndry[3]);  // vy lower bound
+        boundsV2.setHigh(3, bndry[7]); // vy upper bound
+
+        // set the bounds of this space 
+        // note the indexing change
+        cs->as<ob::RealVectorStateSpace>(1)->setBounds(boundsV2);
+
+        // now, we need to create a control space
+        // the realvectorcontrolspace constructor needs the state space it is in and the dimension
+        //      of the control space
+        // Note the controls of a Linear Dyn coorespond to the compound state space we defined 
+        // above. The constructor actually takes in the pointer so, "space" in my case.
+        //  The dimension is also 4 because we have two cars, each with two velocity controls
+        oc::ControlSpacePtr cspace(new oc::RealVectorControlSpace(space, 4));
+        // creat another instance of the bounds
+        ob::RealVectorBounds Cbounds(4);
+        Cbounds.setLow(0, -1);  // ax1 lower bound
+        Cbounds.setHigh(0, 1);  // ax1 upper bound
+        Cbounds.setLow(1, -1);  // ay1 lower bound
+        Cbounds.setHigh(1, 1);  // ay1 upper bound
+        Cbounds.setLow(2, -1);  // ax2 lower bound
+        Cbounds.setHigh(2, 1);  // ax2 upper bound
+        Cbounds.setLow(3, -1);  // ay2 lower bound
+        Cbounds.setHigh(3, 1);  // ay2 upper bound
+
+        // Just as before, set the bounds to the proper space, this time, it is cspace and not space
+        // notice that () is empty, this is because no indexing is needed because 
+        // there is just 1 control space
+        cspace->as<oc::RealVectorControlSpace>()->setBounds(Cbounds);
+
+        // update the simple setup instance with the space we set up
+        ss.reset(new oc::SimpleSetup(cspace));
+
+        // set state propogator for multiplecars
+
+        auto odeSolve(std::make_shared<oc::ODEBasicSolver<>>(ss->getSpaceInformation(), 
+            &Two2ndOrderLinearCarsODE));
+
+        ss->setStatePropagator(oc::ODESolver::getStatePropagator(odeSolve));
+
+        // set start and goal states
+        // analogous to setting the bounds
+        ob::ScopedState<> start(space);
+        start[0] = strt[0];
+        start[1] = strt[1];
+        start[2] = strt[2];
+        start[3] = strt[3];
+        start[4] = strt[4];
+        start[5] = strt[5];
+        start[6] = strt[6];
+        start[7] = strt[7];
+
+        ss->setStartState(start);
+    }
+    else if (model == "2KinematicCars2ndOrder")
+    {
+        // ********************************************************************
+        // ************************* 2 Kinematic Cars *************************
+        // ********************************************************************
+
+        // add subspace for 2 vehcicles
+        // real vector space for x1 y1 v1 phi1
+        cs->addSubspace(ob::StateSpacePtr(new ob::RealVectorStateSpace(4)), 1.0);
+        // next, add a SO2StateSpace for theta1
+        cs->addSubspace(ob::StateSpacePtr(new ob::SO2StateSpace()), 1.0);
+        // real vector space for x2 y2 v2 phi2
+        cs->addSubspace(ob::StateSpacePtr(new ob::RealVectorStateSpace(4)), 1.0);
+        // next, add a SO2StateSpace for theta2
+        cs->addSubspace(ob::StateSpacePtr(new ob::SO2StateSpace()), 1.0);
+
+        // set the bounds for the first vehicle 
+        // they will be the same as vehicle 2 but adding this way is more intuitve
+        ob::RealVectorBounds boundsVehicles(4);
+        boundsVehicles.setLow(0, bndry[0]); //  x lower bound
+        boundsVehicles.setHigh(0, bndry[5]); // x upper bound
+        boundsVehicles.setLow(1, bndry[1]);  // y lower bound
+        boundsVehicles.setHigh(1, bndry[6]); // y upper bound
+        boundsVehicles.setLow(2, bndry[2]);  // v lower bound
+        boundsVehicles.setHigh(2, bndry[7]); // v upper bound
+        boundsVehicles.setLow(3, bndry[3]);  // phi lower bound
+        boundsVehicles.setHigh(3, bndry[8]); // phi upper bound
+
+
+        // set the bounds of this space 
+        cs->as<ob::RealVectorStateSpace>(0)->setBounds(boundsVehicles); 
+
+        // set the bounds of this space 
+        // note the indexing change
+        cs->as<ob::RealVectorStateSpace>(2)->setBounds(boundsVehicles);
+        // now, we need to create a control space
+        // the realvectorcontrolspace constructor needs the state space it is in and the dimension
+        //      of the control space
+        // Note the controls of a Kinematic car coorespond to the compound state space we defined 
+        // above. The constructor actually takes in the pointer so, "space" in my case.
+        //  The dimension is also 4 because we have two cars.
+        oc::ControlSpacePtr cspace(new oc::RealVectorControlSpace(space, 4));
+        // creat another instance of the bounds
+        ob::RealVectorBounds Cbounds(4);
+        Cbounds.setLow(0, -1);  // a1 lower bound
+        Cbounds.setHigh(0, 1);  // a1 upper bound
+        Cbounds.setLow(1, -1);  // phi_ddot1 lower bound
+        Cbounds.setHigh(1, 1);  // phi_ddot1 upper bound
+        Cbounds.setLow(2, -1);  // a2 lower bound
+        Cbounds.setHigh(2, 1);  // a2 upper bound
+        Cbounds.setLow(3, -1);  // phi_ddot2 lower bound
+        Cbounds.setHigh(3, 1);  // phi_ddot2 upper bound
+
+
+        // Just as before, set the bounds to the proper space, this time, it is cspace and not space
+        // notice that () is empty, this is because no indexing is needed because 
+        // there is just 1 control space
+        cspace->as<oc::RealVectorControlSpace>()->setBounds(Cbounds);
+
+        // update the simple setup instance with the space we set up
+        ss.reset(new oc::SimpleSetup(cspace));
+
+        // set state propogator for multiplecars
+
+        auto odeSolve(std::make_shared<oc::ODEBasicSolver<>>(ss->getSpaceInformation(), 
+            Two2ndOrderCarsODE));
+
+        ss->setStatePropagator(oc::ODESolver::getStatePropagator(odeSolve, 
+            &postProp_Two2ndOrderCars));
+
+
+        // set start and goal states
+        // analogous to setting the bounds
+        ob::ScopedState<> start(space);
+        start[0] = strt[0];
+        start[1] = strt[1];
+        start[2] = strt[2];
+        start[3] = strt[3];
+        start[4] = strt[4];
+        start[5] = strt[5];
+        start[6] = strt[6];
+        start[7] = strt[7];
+        start[8] = strt[8];
+        start[9] = strt[9];
+
+        ss->setStartState(start);
+    }
     else
     {
         std::cout << "No matching model. Exiting Program to avoid error" << std::endl;

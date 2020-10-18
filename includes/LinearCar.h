@@ -93,6 +93,7 @@ void TwoLinearCarsODE (const oc::ODESolver::StateType& q, const oc::Control* con
 
 void ThreeLinearCarsODE (const oc::ODESolver::StateType& q, const oc::Control* control, oc::ODESolver::StateType& qdot);
 
+void Two2ndOrderLinearCarsODE (const oc::ODESolver::StateType& q, const oc::Control* control, oc::ODESolver::StateType& qdot);
 
 
 // #endif

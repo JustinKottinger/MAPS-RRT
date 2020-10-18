@@ -308,6 +308,61 @@ void postProp_TwoKinematicCars(const ob::State *q, const oc::Control *ctl,
 }
 
 // multi agent ODE function
+void Two2ndOrderCarsODE (const oc::ODESolver::StateType& q, const oc::Control* control, oc::ODESolver::StateType& qdot)
+{
+    // std::cout << "here" << std::endl;
+    const double *u = control->as<oc::RealVectorControlSpace::ControlType>()->values;
+    // q = x1, y1, v1, phi1, theta1, x2, y2, v2, phi2, theta2
+    // c = v1, phi1, v2, phi2
+
+    // velocities
+    const double v1 = q[2];
+    const double v2 = q[7];
+
+    // phis
+    const double phi1 = q[3];
+    const double phi2 = q[8];
+
+    // thetas 
+    const double theta1 = q[4];
+    const double theta2 = q[9];
+
+    // tuning param
+    double carLength = 1;
+
+    // Zero out qdot
+    qdot.resize (q.size (), 0);
+    // vehicle 1
+    qdot[0] = v1 * cos(theta1);
+    qdot[1] = v1 * sin(theta1);
+    qdot[2] = u[0];  // dv/dt == accel
+    qdot[3] = u[1];  // dphi/dt == steering rate
+    qdot[4] = (v1 / carLength) * tan(phi1);
+    // vehicle 2
+    qdot[5] = v2 * cos(theta2);
+    qdot[6] = v2 * sin(theta2);
+    qdot[7] = u[2];  // dv/dt == accel
+    qdot[8] = u[3];  // dphi/dt == steering rate
+    qdot[9] = (v2 / carLength) * tan(phi2);
+}
+// multi agent callback function
+void postProp_Two2ndOrderCars(const ob::State *q, const oc::Control *ctl, 
+    const double duration, ob::State *qnext)
+{
+    //pull the angles from both cars
+    ob::CompoundState* cs = qnext->as<ob::CompoundState>();
+
+    ob::SO2StateSpace::StateType* angleState1 = cs->as<ob::SO2StateSpace::StateType>(1);
+    ob::SO2StateSpace::StateType* angleState2 = cs->as<ob::SO2StateSpace::StateType>(3);
+
+    //use ompl to normalize theta
+    ob::SO2StateSpace SO2;
+    SO2.enforceBounds(angleState1);
+    SO2.enforceBounds(angleState2);
+
+}
+
+// multi agent ODE function
 void ThreeKinematicCarsODE (const oc::ODESolver::StateType& q, const oc::Control* control, oc::ODESolver::StateType& qdot)
 {
     // std::cout << "here" << std::endl;

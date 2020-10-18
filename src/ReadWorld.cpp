@@ -128,7 +128,7 @@ void readFile(const char* filename, std::vector<double> &b, std::vector<double> 
 		}
 		else if (str == "boundary")
 		{
-			for (int i = 0; i<2*dimension; i++)
+			for (int i = 0; i<(dimension*numVehicles); i++)
 			{
 				std::string strB;
 				fin >> strB;
