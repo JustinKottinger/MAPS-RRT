@@ -230,6 +230,34 @@ void ThreeLinearCarsODE (const oc::ODESolver::StateType& q, const oc::Control* c
     qdot[5] = u[5];
 }
 
+// 2 agent linear 2nd order ODE function
+void Two2ndOrderLinearCarsODE (const oc::ODESolver::StateType& q, const oc::Control* control, oc::ODESolver::StateType& qdot)
+{
+    // std::cout << "here" << std::endl;
+    const double *u = control->as<oc::RealVectorControlSpace::ControlType>()->values;
+    // q = x1, y1, vx1, vy1, x2, y2, vx2, vy2
+    // c = ax1 ay1 ax2 ay2
+
+    // velocities
+    const double vx1 = q[2];
+    const double vy1 = q[3];
+    const double vx2 = q[6];
+    const double vy2 = q[7];
+
+    // Zero out qdot
+    qdot.resize (q.size (), 0);
+    // vehicle 1
+    qdot[0] = vx1;
+    qdot[1] = vy1;
+    qdot[2] = u[0];
+    qdot[3] = u[1];
+    // vehicle 2
+    qdot[4] = vx2;
+    qdot[5] = vy2;
+    qdot[6] = u[2];
+    qdot[7] = u[3];
+}
+
 
 
 

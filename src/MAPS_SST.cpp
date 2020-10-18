@@ -206,12 +206,83 @@ std::vector<double> ompl::control::MAPSSST::getDistance(const base::State *st)
         distance = TwoUnicycleDistance(st);
     else if (model_ == "3KinematicCars")
         distance = ThreeKinDistance(st);
+    else if (model_ == "2KinematicCars2ndOrder")
+        distance = Two2ndOrderCarDistance(st);
+    else if (model_ == "2Linear2ndOrder")
+        distance = Two2ndOrderLinearDistance(st);
+    else if (model_ == "2Unicycle2ndOrder")
+        distance = Two2ndOrderUnicycleDistance(st);
     else
     {
         std::cout << "Current Distance Model Not Implemented." << std::endl;
         exit(1);
     }
     return distance;
+}
+
+std::vector<double> ompl::control::MAPSSST::Two2ndOrderCarDistance(const ob::State *st) const
+{
+  
+  std::vector<double> distance;
+  auto cs_ = st->as<ompl::base::CompoundStateSpace::StateType>();
+  auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+  auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
+
+  double deltax_v1 = pow((g[0] - xyState1_->values[0]), 2);
+  double deltay_v1 = pow((g[1] - xyState1_->values[1]), 2);
+  double deltax_v2 = pow((g[5] - xyState2_->values[0]), 2);
+  double deltay_v2 = pow((g[6] - xyState2_->values[1]), 2);
+
+  double d1 = sqrt(deltax_v1 + deltay_v1);
+  double d2 = sqrt(deltax_v2 + deltay_v2);
+
+  distance.push_back(d1);
+  distance.push_back(d2);
+
+  return distance;
+}
+
+std::vector<double> ompl::control::MAPSSST::Two2ndOrderLinearDistance(const ob::State *st) const
+{
+  std::vector<double> distance;
+  auto cs_ = st->as<ompl::base::CompoundStateSpace::StateType>();
+  auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+  auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(1);
+
+  double deltax_v1 = pow((g[0] - xyState1_->values[0]), 2);
+  double deltay_v1 = pow((g[1] - xyState1_->values[1]), 2);
+  double deltax_v2 = pow((g[4] - xyState2_->values[0]), 2);
+  double deltay_v2 = pow((g[5] - xyState2_->values[1]), 2);
+
+  double d1 = sqrt(deltax_v1 + deltay_v1);
+  double d2 = sqrt(deltax_v2 + deltay_v2);
+
+  distance.push_back(d1);
+  distance.push_back(d2);
+
+  return distance;
+}
+
+std::vector<double> ompl::control::MAPSSST::Two2ndOrderUnicycleDistance(const ob::State *st) const
+{
+  
+  std::vector<double> distance;
+  auto cs_ = st->as<ompl::base::CompoundStateSpace::StateType>();
+  auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+  auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(3);
+
+  double deltax_v1 = pow((g[0] - xyState1_->values[0]), 2);
+  double deltay_v1 = pow((g[1] - xyState1_->values[1]), 2);
+  double deltax_v2 = pow((g[5] - xyState2_->values[0]), 2);
+  double deltay_v2 = pow((g[6] - xyState2_->values[1]), 2);
+
+  double d1 = sqrt(deltax_v1 + deltay_v1);
+  double d2 = sqrt(deltax_v2 + deltay_v2);
+
+  distance.push_back(d1);
+  distance.push_back(d2);
+
+  return distance;
 }
 
 std::vector<double> ompl::control::MAPSSST::ThreeKinDistance(const ob::State *st)
@@ -540,10 +611,182 @@ void ompl::control::MAPSSST::overrideStates(const std::vector<int> DoNotProp, co
         OverrideLinCars(DoNotProp, source, result, control);
     else if (model_ == "3Unicycle" || model_ == "2Unicycle")
         OverrideUniCars(DoNotProp, source, result, control);
+    else if (model_ == "2Unicycle2ndOrder")
+        Override2ndOrderUniCars(DoNotProp, source, result, control);
+    else if (model_ == "2Linear2ndOrder")
+        Override2ndOrderLinCars(DoNotProp, source, result, control);
+    else if (model_ == "2KinematicCars2ndOrder")
+        Override2ndOrderKinCars(DoNotProp, source, result, control);
     else
     {
         std::cout << "Current Override States Model Not Implemented." << std::endl;
         exit(1);
+    }
+}
+
+void ompl::control::MAPSSST::Override2ndOrderLinCars(const std::vector<int> DoNotProp, const base::State *source, 
+    base::State *result, Control *control)
+{
+    // this function takes in a state and a list of vehicle indexes that do not need to be propogated
+    // it changes the state s.t. state propogation and controls are null for any vehicles in the goal
+    if (DoNotProp.size() > 0)
+    {
+        // this array has a list of vehicles that do not need to be progpogated
+        // we need to iterate through all of them
+
+        // get the entire compound state for result
+        ompl::base::CompoundStateSpace::StateType *destination = 
+            result->as<ompl::base::CompoundStateSpace::StateType>();
+
+        // get the entire compound state space for source
+        const ob::CompoundStateSpace::StateType *src = 
+            source->as<ob::CompoundStateSpace::StateType>();
+
+        double *cntrl = control->as<oc::RealVectorControlSpace::ControlType>()->values;
+
+        for (int i = 0; i < DoNotProp.size(); i++)
+        {
+            // overriding controls 
+            // indexing method: ControlDimension(vehicle) + ControlIndex
+            cntrl[NumCs*DoNotProp[i] + 0] = 0.0;
+            cntrl[NumCs*DoNotProp[i] + 1] = 0.0;
+
+            // next, make the source state the destination state for the indiv. vehicles
+            // indexing method: 2(vehicle) or 2(vehicle) + 1
+
+            // get the specific xy state of result 
+            ob::RealVectorStateSpace::StateType *xyDest = 
+                destination->as<ob::RealVectorStateSpace::StateType>(DoNotProp[i]);
+
+            // get the specific xy state of the source
+            const auto *SRCxyState = src->as<ob::RealVectorStateSpace::StateType>(DoNotProp[i]);
+
+            // overriding the state
+            xyDest->values[0] = SRCxyState->values[0];
+            xyDest->values[1] = SRCxyState->values[1];
+            xyDest->values[2] = SRCxyState->values[2];
+            xyDest->values[3] = SRCxyState->values[3];
+
+        }
+    }
+}
+
+void ompl::control::MAPSSST::Override2ndOrderKinCars(const std::vector<int> DoNotProp, const base::State *source, 
+    base::State *result, Control *control)
+{
+    // this function takes in a state and a list of vehicle indexes that do not need to be propogated
+    // it changes the state s.t. state propogation and controls are null for any vehicles in the goal
+    if (DoNotProp.size() > 0)
+    {
+        // this array has a list of vehicles that do not need to be progpogated
+        // we need to iterate through all of them
+
+        // get the entire compound state for result
+        ompl::base::CompoundStateSpace::StateType *destination = 
+            result->as<ompl::base::CompoundStateSpace::StateType>();
+
+        // get the entire compound state space for source
+        const ob::CompoundStateSpace::StateType *src = 
+            source->as<ob::CompoundStateSpace::StateType>();
+
+        double *cntrl = control->as<oc::RealVectorControlSpace::ControlType>()->values;
+
+        for (int i = 0; i < DoNotProp.size(); i++)
+        {
+            // overriding controls 
+            // indexing method: ControlDimension(vehicle) + ControlIndex
+            cntrl[NumCs*DoNotProp[i] + 0] = 0.0;
+            cntrl[NumCs*DoNotProp[i] + 1] = 0.0;
+
+            // next, make the source state the destination state for the indiv. vehicles
+            // indexing method: 2(vehicle) or 2(vehicle) + 1
+
+            // get the specific xy state of result 
+            ob::RealVectorStateSpace::StateType *xyDest = 
+                destination->as<ob::RealVectorStateSpace::StateType>(2*DoNotProp[i]);
+
+            // get the specific xy state of the source
+            const auto *SRCxyState = src->as<ob::RealVectorStateSpace::StateType>(2*DoNotProp[i]);
+
+            // get the specific orientation of result
+            ob::SO2StateSpace::StateType *rotd = destination->as<ob::SO2StateSpace::StateType>(2*DoNotProp[i] + 1);
+
+            // get the specific orientation of the source
+            const auto *rots = src->as<ob::SO2StateSpace::StateType>(2*DoNotProp[i] + 1);
+
+            // overriding the position state
+            xyDest->values[0] = SRCxyState->values[0];
+            xyDest->values[1] = SRCxyState->values[1];
+            xyDest->values[2] = SRCxyState->values[2];
+            xyDest->values[3] = SRCxyState->values[3];
+
+            // overriding the orientation
+            rotd->value = rots->value;
+
+        }
+    }
+}
+
+void ompl::control::MAPSSST::Override2ndOrderUniCars(const std::vector<int> DoNotProp, const base::State *source, 
+    base::State *result, Control *control)
+{
+    // this function takes in a state and a list of vehicle indexes that do not need to be propogated
+    // it changes the state s.t. state propogation and controls are null for any vehicles in the goal
+    if (DoNotProp.size() > 0)
+    {
+        // this array has a list of vehicles that do not need to be progpogated
+        // we need to iterate through all of them
+
+        // get the entire compound state for result
+        ompl::base::CompoundStateSpace::StateType *destination = 
+            result->as<ompl::base::CompoundStateSpace::StateType>();
+
+        // get the entire compound state space for source
+        const ob::CompoundStateSpace::StateType *src = 
+            source->as<ob::CompoundStateSpace::StateType>();
+
+        double *cntrl = control->as<oc::RealVectorControlSpace::ControlType>()->values;
+
+        for (int i = 0; i < DoNotProp.size(); i++)
+        {
+            // overriding controls 
+            // indexing method: ControlDimension(vehicle) + ControlIndex
+            cntrl[NumCs*DoNotProp[i] + 0] = 0.0;
+            cntrl[NumCs*DoNotProp[i] + 1] = 0.0;
+
+            // next, make the source state the destination state for the indiv. vehicles
+            // indexing method: 2(vehicle) or 2(vehicle) + 1
+
+            // get the specific xy state of result 
+            ob::RealVectorStateSpace::StateType *xyDest = 
+                destination->as<ob::RealVectorStateSpace::StateType>(3*DoNotProp[i]);
+
+            // get the specific xy state of the source
+            const auto *SRCxyState = src->as<ob::RealVectorStateSpace::StateType>(3*DoNotProp[i]);
+
+            // get the specific orientation of result
+            ob::SO2StateSpace::StateType *rotd = destination->as<ob::SO2StateSpace::StateType>(3*DoNotProp[i] + 1);
+
+            // get the specific orientation of the source
+            const auto *rots = src->as<ob::SO2StateSpace::StateType>(3*DoNotProp[i] + 1);
+
+            // get the specific omega of result
+            ob::RealVectorStateSpace::StateType *omegad = destination->as<ob::RealVectorStateSpace::StateType>(3*DoNotProp[i] + 2);
+
+            // get the specific omega of the source
+            const auto *omegas = src->as<ob::RealVectorStateSpace::StateType>(3*DoNotProp[i] + 2);
+
+            // overriding the position state
+            xyDest->values[0] = SRCxyState->values[0];
+            xyDest->values[1] = SRCxyState->values[1];
+
+            // overriding the orientation
+            rotd->value = rots->value;
+
+            // overriding the omega
+            omegad->values[0] = omegas->values[0];
+
+        }
     }
 }
 
@@ -704,17 +947,49 @@ void ompl::control::MAPSSST::OverrideKinCars(const std::vector<int> DoNotProp, c
 std::vector<Point> ompl::control::MAPSSST::MakeLinearPath(const base::State *st) const
 {
     std::vector<Point> VehiclePoints;
-    if (model_ == "2KinematicCars" || model_ == "3KinematicCars")
+    if (model_ == "2KinematicCars" || model_ == "3KinematicCars" || model_ == "2KinematicCars2ndOrder")
         VehiclePoints = MakeKinPath(st);
-    else if ((model_ == "2Linear") || (model_ == "3Linear"))
+    else if ((model_ == "2Linear") || (model_ == "3Linear") || (model_ == "2Linear2ndOrder"))
         VehiclePoints = MakeLinPath(st);
     else if (model_ == "3Unicycle" || model_ == "2Unicycle")
         VehiclePoints = MakeUniPath(st);
+    else if (model_ == "2Unicycle2ndOrder")
+        VehiclePoints = Make2ndOrderUniPath(st);
     else
     {
         std::cout << "Current Linear Path Model Not Implemented." << std::endl;
         exit(1);
     }
+    return VehiclePoints;
+}
+
+std::vector<Point> ompl::control::MAPSSST::Make2ndOrderUniPath(const base::State *result) const
+{
+    //  this function will take in a source state and a result state
+    // it will return a line in the 2D plane from these states (projected onto 2D)
+    std::vector<Point> VehiclePoints;
+
+    // get the compound state of the result
+    const ompl::base::CompoundStateSpace::StateType *destination = 
+        result->as<ompl::base::CompoundStateSpace::StateType>();
+
+    for (int i = 0; i < NumVs; i++)
+    {
+        // get the xy point of the result per vehicle
+        const ob::RealVectorStateSpace::StateType *DESTxyState = 
+            destination->as<ob::RealVectorStateSpace::StateType>(3 * i);
+
+        auto r = DESTxyState->values;
+
+        // get the point for the vehicle state
+        point child(r[0], r[1]);
+
+        // generate a segement of those points per vehicle
+        VehiclePoints.push_back(child);
+
+    }
+
+    // this returns a list of lines from the source point to the result point for each vehicle
     return VehiclePoints;
 }
 
@@ -818,15 +1093,74 @@ std::vector<Point> ompl::control::MAPSSST::MakeKinPath(const base::State *result
 void ompl::control::MAPSSST::Get2DimDistance(Motion *motion, const base::State *source, 
     const base::State *result)
 {
-    if ((model_ == "2KinematicCars") || (model_ == "3Unicycle") || model_ == "3KinematicCars" || (model_ == "2Unicycle"))
+    if ((model_ == "2KinematicCars") || (model_ == "3Unicycle") || 
+        model_ == "3KinematicCars" || (model_ == "2Unicycle") || model_ == "2KinematicCars2ndOrder")
         Get2DimDist2KinCars(motion, source, result);
-    else if ((model_ == "2Linear") || (model_ == "3Linear"))
+    else if ((model_ == "2Linear") || (model_ == "3Linear") || (model_ == "2Linear2ndOrder"))
         Get2DimDist2LinCars(motion, source, result);
+    else if (model_ == "2Unicycle2ndOrder")
+        Get2DimDist2ndOrderUni(motion, source, result);
     else
     {
         std::cout << "Current Distance Model Not Implemented." << std::endl;
         exit(1);
     }
+}
+
+// different from distance function above in that this function saves distances to the node
+void ompl::control::MAPSSST::Get2DimDist2ndOrderUni(Motion *motion, const base::State *source, 
+    const base::State *result)
+{
+    // allocate the returnable -- [distance between ]
+    std::vector<double> AllVehicleDist;
+
+    // get the entire compound state for result
+    const ompl::base::CompoundStateSpace::StateType *destination = 
+        result->as<ompl::base::CompoundStateSpace::StateType>();
+
+    // get the entire compound state space for source
+    const ob::CompoundStateSpace::StateType *src = 
+        source->as<ob::CompoundStateSpace::StateType>();
+
+    for (int i = 0; i < NumVs; i++)
+    {
+        // get the xy point of the source
+        const ob::RealVectorStateSpace::StateType *SRCxyState = 
+            src->as<ob::RealVectorStateSpace::StateType>(3*i);
+
+        // get the xy point of the result per vehicle
+        const ob::RealVectorStateSpace::StateType *DESTxyState = 
+            destination->as<ob::RealVectorStateSpace::StateType>(3*i);
+
+        auto s = SRCxyState->values;
+
+        auto r = DESTxyState->values;
+
+        // get the point for the vehicle state
+        Point parent(s[0], s[1]);
+        Point child(r[0], r[1]);
+
+        double dist = bg::distance(parent, child);
+        AllVehicleDist.push_back(dist);
+    }
+
+    // at end of loop, AllVehicleDistance contains the linear distance between the source and result
+    // next, we add it to the existing distances that are there
+    if ((motion->AllVehicleDistance).size() == 0)
+    {
+        // std::cout << "here" << std::endl;
+        motion->AllVehicleDistance = AllVehicleDist;
+    }
+    else
+    {
+
+        for (int v = 0; v < NumVs; v++)
+        {
+            (motion->AllVehicleDistance)[v] = (motion->AllVehicleDistance)[v] + AllVehicleDist[v];
+        }
+    }
+    // std::cout << "Dist: " << (motion->AllVehicleDistance)[0] << " " << 
+    //     (motion->AllVehicleDistance)[1] << std::endl;
 }
 
 void ompl::control::MAPSSST::Get2DimDist2LinCars(Motion *motion, const base::State *source, 

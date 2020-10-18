@@ -197,6 +197,92 @@ void postProp_ThreeUnicycles(const ob::State *q, const oc::Control *ctl,
 
 }
 
+// this function is used for any 2D projection needed
+// include but not limited to: obs checking, and path segmenting
+std::vector<polygon> Two2ndOrderUnicycleModels::GetPolygons()
+{
+    std::vector<polygon> Vehicles;
+    // *********************
+    // ***** vehicle 1 *****
+    // *********************
+
+    // create the shape of the vehicle centered at (0, 0)
+    // point A1 = [-0.5l, -0.5w]
+    point BackR1( -0.5 * carLength_, -0.5 * carWidth_);
+    // point B1 = [-0.5l, +0.5w]
+    point BackL1( (-0.5 * carLength_), (0.5 * carWidth_));
+    // point C1 = [+0.5l, +0.5w]
+    point FrontL1( (0.5 * carLength_), (0.5 * carWidth_));
+    // point B1 = [+0.5l, -0.5w]
+    point FrontR1( (0.5 * carLength_), (-0.5 * carWidth_));
+
+    // trans::rotate_transformer<bg::radian, double, 2, 2>rotate1((rot1_->value));
+
+    // boost::geometry::transform(BackR1, BackR1, rotate1);
+    // boost::geometry::transform(BackL1, BackL1, rotate1);
+    // boost::geometry::transform(FrontL1, FrontL1, rotate1);
+    // boost::geometry::transform(FrontR1, FrontR1, rotate1);
+
+    // now, translate the polygon to the state location
+    trans::translate_transformer<double, 2, 2> translate1(xyState1_->values[0], xyState1_->values[1]);
+
+    boost::geometry::transform(BackR1, BackR1, translate1);
+    boost::geometry::transform(BackL1, BackL1, translate1);
+    boost::geometry::transform(FrontL1, FrontL1, translate1);
+    boost::geometry::transform(FrontR1, FrontR1, translate1);
+
+    // create instance of polygon
+    polygon v1;
+    // // add the outer points to the shape
+    v1.outer().push_back(BackR1);
+    v1.outer().push_back(BackL1);
+    v1.outer().push_back(FrontL1);
+    v1.outer().push_back(FrontR1);
+    v1.outer().push_back(BackR1);
+
+    Vehicles.push_back(v1);
+
+    // // *********************
+    // // ***** vehicle 2 *****
+    // // *********************
+
+    point BackR2( -0.5 * carLength_, -0.5 * carWidth_);
+    // point B1 = [-0.5l, +0.5w]
+    point BackL2( (-0.5 * carLength_), (0.5 * carWidth_));
+    // point C1 = [+0.5l, +0.5w]
+    point FrontL2( (0.5 * carLength_), (0.5 * carWidth_));
+    // point B1 = [+0.5l, -0.5w]
+    point FrontR2( (0.5 * carLength_), (-0.5 * carWidth_));
+
+    // trans::rotate_transformer<bg::radian, double, 2, 2>rotate2((rot2_->value));
+
+    // boost::geometry::transform(BackR2, BackR2, rotate2);
+    // boost::geometry::transform(BackL2, BackL2, rotate2);
+    // boost::geometry::transform(FrontL2, FrontL2, rotate2);
+    // boost::geometry::transform(FrontR2, FrontR2, rotate2);
+
+    // now, translate the polygon to the state location
+    trans::translate_transformer<double, 2, 2> translate2(xyState2_->values[0], xyState2_->values[1]);
+
+    boost::geometry::transform(BackR2, BackR2, translate2);
+    boost::geometry::transform(BackL2, BackL2, translate2);
+    boost::geometry::transform(FrontL2, FrontL2, translate2);
+    boost::geometry::transform(FrontR2, FrontR2, translate2);
+
+    // create instance of polygon
+    polygon v2;
+    // // add the outer points to the shape
+    v2.outer().push_back(BackR2);
+    v2.outer().push_back(BackL2);
+    v2.outer().push_back(FrontL2);
+    v2.outer().push_back(FrontR2);
+    v2.outer().push_back(BackR2);
+
+    Vehicles.push_back(v2);
+
+    return Vehicles;
+}
+
 
 // this function is used for any 2D projection needed
 // include but not limited to: obs checking, and path segmenting
@@ -330,6 +416,55 @@ void postProp_TwoUnicycles(const ob::State *q, const oc::Control *ctl,
 
 }
 
+// multi agent ODE function
+void Two2ndOrderUnicyclesODE(const oc::ODESolver::StateType& q, const oc::Control* control, oc::ODESolver::StateType& qdot)
+{
+    const double *u = control->as<oc::RealVectorControlSpace::ControlType>()->values;
+    // q = x1, y1, v1, theta1, omega1, x2, y2, v2, theta2, omega2
+    // c = a1, alpha1, a2, alpha2
+
+    // velocities
+    const double v1 = q[2];
+    const double v2 = q[7];
+
+    // thetas
+    const double theta1 = q[3];
+    const double theta2 = q[8];
+
+    // omegas
+    const double omega1 = q[4];
+    const double omega2 = q[9];
+
+    // Zero out qdot
+    qdot.resize (q.size (), 0);
+    // vehicle 1
+    qdot[0] = v1 * cos(theta1);
+    qdot[1] = v1 * sin(theta1);
+    qdot[2] = u[0];
+    qdot[3] = omega1;
+    qdot[4] = u[1];
+    // vehicle 2
+    qdot[5] = v2 * cos(theta2);
+    qdot[6] = v2 * sin(theta2);
+    qdot[7] = u[2];
+    qdot[8] = omega2;
+    qdot[9] = u[3];
+    
+}
+// multi agent callback function
+void postProp_Two2ndOrderUnicycles(const ob::State *q, const oc::Control *ctl, 
+    const double duration, ob::State *qnext)
+{
+    //pull the angles from both cars
+    ob::CompoundState* cs = qnext->as<ob::CompoundState>();
+
+    ob::SO2StateSpace::StateType* theta1 = cs->as<ob::SO2StateSpace::StateType>(1);
+    ob::SO2StateSpace::StateType* theta2 = cs->as<ob::SO2StateSpace::StateType>(4);
+    //use ompl to normalize theta
+    ob::SO2StateSpace SO2;
+    SO2.enforceBounds(theta1);
+    SO2.enforceBounds(theta2);
+}
 
 
 

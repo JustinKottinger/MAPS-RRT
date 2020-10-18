@@ -28,8 +28,6 @@ typedef boost::array< double , 6 > state_type;
 
 
 
-
-
 // this is the class I want to use to project my states into 2Dprojections of vehicles
 class TwoKinematicCarsModel
 {
@@ -125,6 +123,16 @@ void TwoKinematicCarsODE (const oc::ODESolver::StateType& q,
 // Definition of ODe for 2kinematic car ODE
 void ThreeKinematicCarsODE (const oc::ODESolver::StateType& q, 
     const oc::Control* control, oc::ODESolver::StateType& qdot);
+
+// Definition of ODe for 2 dynamical car ODE
+void Two2ndOrderCarsODE (const oc::ODESolver::StateType& q, 
+    const oc::Control* control, oc::ODESolver::StateType& qdot);
+
+void postProp_Two2ndOrderCars(const ob::State *q, const oc::Control *ctl, 
+    const double duration, ob::State *qnext);
+
+void postProp_TwoKinematicCars(const ob::State *q, const oc::Control *ctl, 
+    const double duration, ob::State *qnext);
 
 
 // This is a callback method invoked after numerical integration.
