@@ -143,6 +143,17 @@ void postProp_TwoKinematicCars(const ob::State *q, const oc::Control *ctl,
 void postProp_ThreeKinematicCars(const ob::State *q, const oc::Control *ctl, 
     const double duration, ob::State *qnext);
 
+
+
+// Definition of ODe for 2 dynamical car ODE
+void mlExampleODE (const oc::ODESolver::StateType& q, 
+    const oc::Control* control, oc::ODESolver::StateType& qdot);
+
+void postProp_mlExample(const ob::State *q, const oc::Control *ctl, 
+    const double duration, ob::State *qnext);
+
+
+
 // this class is currenlty being used to integrate during planning
 // could be integrated into the class above in the future
 class TwoKinCarsODE 

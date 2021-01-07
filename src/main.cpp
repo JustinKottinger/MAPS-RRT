@@ -11,8 +11,7 @@
 #include <ompl/base/spaces/RealVectorStateProjections.h>
 #include <ompl/base/Goal.h>
 #include <ompl/base/ProjectionEvaluator.h>
-// #include <ompl/base/goals/GoalRegion.h>
-// #include <ompl/control/planners/rrt/RRT.h>
+#include "ompl/tools/benchmark/Benchmark.h"
 // std includes
 #include <iostream>
 #include <valarray>
@@ -34,22 +33,23 @@
 #include "../includes/MAPS_SST.h"
 #include "../includes/MAPS_EST.h"
 #include "../includes/MAPSRRTPathControl.h"
-#include "ompl/tools/benchmark/Benchmark.h"
 #include "../includes/RRTplus.h"
 #include "../includes/MyRRT.h"
 #include <bits/stdc++.h>
-// #include "../includes/RRTplusPathControl.h"
 
 namespace ob = ompl::base;
 namespace oc = ompl::control;
 namespace bg = boost::geometry;
 
+// Local paths to examples
+// txt/world_mlExample.txt
+// txt/Shaull/3agents/2ndOrderLinear/example3_3_2ndOrderLinear.txt
 
 class KinematicCarStateValidityChecker : public ob::StateValidityChecker
 {
 public:
-    KinematicCarStateValidityChecker(const ob::SpaceInformationPtr &si, std::vector<double> obs) :
-       ob::StateValidityChecker(si)
+    KinematicCarStateValidityChecker(const ob::SpaceInformationPtr &si, 
+      std::vector<double> obs) : ob::StateValidityChecker(si)
     {
         space_ = si->getStateSpace();
         obstacle = obs;
@@ -86,6 +86,54 @@ public:
     std::vector<double> obstacle;
     const double buffer_ = 0.2;
 };
+
+
+class mlExampleStateValidityChecker : public ob::StateValidityChecker
+{
+public:
+    mlExampleStateValidityChecker(const ob::SpaceInformationPtr &si, 
+      std::vector<double> obs) : ob::StateValidityChecker(si)
+    {
+        space_ = si->getStateSpace();
+        obstacle = obs;
+        // const double toll_ = 0.2;
+    }
+
+    virtual bool isValid(const ob::State *state) const
+    {
+        if (!space_->satisfiesBounds(state))
+        {
+          return false;
+        }
+
+        auto cs_ = state->as<ompl::base::CompoundStateSpace::StateType>();
+
+        auto xyzState = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+        
+        const double x = xyzState->values[0];
+        const double y = xyzState->values[1];
+        const double z = xyzState->values[2];
+
+        // double x = pos->values[0];
+        // double y = pos->values[1];
+            
+        for (int i = 0; i < obstacle.size(); i=i+6)
+        {
+          if (x>(obstacle[i] - buffer_) && x<(obstacle[i] + 1 + buffer_) && 
+            y>(obstacle[i+1] - buffer_) && y<(obstacle[i+1] + 1 + buffer_) && 
+            z>(obstacle[i+2] - buffer_) && z<(obstacle[i+2] + 1 + buffer_))
+          {
+            return false;
+          }       
+        }    
+        return true;
+    }
+
+    ob::StateSpacePtr space_;
+    std::vector<double> obstacle;
+    const double buffer_ = 0.2;
+};
+
 
 // used for 3 agent planning for kinematic car
 class ThreeKinematicCarStateValidityChecker : public ob::StateValidityChecker
@@ -410,6 +458,83 @@ public:
         if (!test)
         {
             return false;
+        }
+
+        // if that test passes, check colliding with objects
+        for (int i = 0; i < obstacle.size(); i=i+6)
+        {
+          // // create obs object
+          point BotR( obstacle[i], obstacle[i+1]);
+          point TopR(obstacle[i], obstacle[i+1] + obstacle[i + 4]);
+          point BotL(obstacle[i] + obstacle[i + 3], obstacle[i+1]);
+          point TopL(obstacle[i] + obstacle[i + 3], obstacle[i+1] + obstacle[i + 4]);
+
+          // create instance of polygon
+          polygon obst;
+          // // add the outer points to the shape
+          obst.outer().push_back(BotR);
+          obst.outer().push_back(TopR);
+          obst.outer().push_back(TopL);
+          obst.outer().push_back(BotL);
+          obst.outer().push_back(BotR);
+
+          // for all vehicles, see if they collide with obs
+          for (int v = 0; v < vs.size(); v++)
+          {
+            bool disjoint = boost::geometry::disjoint(vs[v], obst);
+
+            if (!disjoint)
+            {
+              return false;
+            }
+          }
+        }  
+        return true;
+    }
+
+    ob::StateSpacePtr space_;
+    std::vector<double> obstacle;
+    const double buffer_ = 0.2;
+};
+
+// used for 3 agent planning for linear dyn
+class Three2ndOrderLinearCarStateValidityChecker : public ob::StateValidityChecker
+{
+public:
+    Three2ndOrderLinearCarStateValidityChecker(const ob::SpaceInformationPtr &si, std::vector<double> obs) :
+       ob::StateValidityChecker(si)
+    {
+        space_ = si->getStateSpace();
+        obstacle = obs;
+        // const double toll_ = 0.2;
+    }
+
+    virtual bool isValid(const ob::State *state) const
+    {
+        if (!space_->satisfiesBounds(state))
+        {
+          return false;
+        }
+
+
+        ThreeLinearCars vehicles = ThreeLinearCars(state);
+        std::vector<polygon> vs = vehicles.GetPolygons();
+
+        // first, test for vehicles colliding with each other
+        for (int v1 = 0; v1 < vs.size(); v1++)
+        {
+          for (int v2 = 0; v2 < vs.size(); v2++)
+          {
+            // make sure we are not checking the same vehicle -- this would return false
+            if (v1 != v2)
+            {
+              bool test = boost::geometry::disjoint(vs[v1], vs[v2]);
+              if (!test)
+              {
+                return false;
+              }
+            }
+          }
         }
 
         // if that test passes, check colliding with objects
@@ -877,7 +1002,11 @@ class MyArbitraryGoal : public ompl::base::Goal
     virtual std::vector<double> getDistance(const ob::State *st) const
     {
       std::vector<double> distance;
-      if (model == "2KinematicCars")
+      if (model == "KinematicCar")
+        distance = KinCarDistance(st);
+      else if (model == "mlExample")
+      	distance = mlExampleDistance(st);
+      else if (model == "2KinematicCars")
         distance = TwoKinDistance(st);
       else if (model == "2Linear")
         distance = TwoLinearDistance(st);
@@ -895,6 +1024,8 @@ class MyArbitraryGoal : public ompl::base::Goal
         distance = Two2ndOrderLinearDistance(st);
       else if (model == "2KinematicCars2ndOrder")
         distance = Two2ndOrderCarDistance(st);
+      else if (model == "3Linear2ndOrder")
+        distance = ThreeLinear2ndOrderDistance(st);
       else
       {
         std::cout << "Current Goal Model Not Implemented" << std::endl;
@@ -902,6 +1033,42 @@ class MyArbitraryGoal : public ompl::base::Goal
       }
       return distance;
     }
+
+    virtual std::vector<double> mlExampleDistance(const ob::State *st) const
+    {
+      
+      std::vector<double> distance;
+      auto cs_ = st->as<ompl::base::CompoundStateSpace::StateType>();
+      auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+
+      double deltax = pow((goal[0] - xyState1_->values[0]), 2);
+      double deltay = pow((goal[1] - xyState1_->values[1]), 2);
+      double deltaz = pow((goal[2] - xyState1_->values[2]), 2);
+
+      double d1 = sqrt(deltax + deltay + deltaz);
+
+      distance.push_back(d1);
+
+      return distance;
+    }
+
+    virtual std::vector<double> KinCarDistance(const ob::State *st) const
+    {
+      
+      std::vector<double> distance;
+      auto cs_ = st->as<ompl::base::CompoundStateSpace::StateType>();
+      auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+
+      double deltax_v1 = pow((goal[0] - xyState1_->values[0]), 2);
+      double deltay_v1 = pow((goal[1] - xyState1_->values[1]), 2);
+
+      double d1 = sqrt(deltax_v1 + deltay_v1);
+
+      distance.push_back(d1);
+
+      return distance;
+    }
+
     virtual std::vector<double> TwoUnicycleDistance(const ob::State *st) const
     {
       
@@ -1021,6 +1188,32 @@ class MyArbitraryGoal : public ompl::base::Goal
       return distance;
     }
 
+    virtual std::vector<double> ThreeLinear2ndOrderDistance(const ob::State *st) const
+    {
+      std::vector<double> distance;
+      auto cs_ = st->as<ompl::base::CompoundStateSpace::StateType>();
+      auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+      auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(1);
+      auto xyState3_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
+
+      double deltax_v1 = pow((goal[0] - xyState1_->values[0]), 2);
+      double deltay_v1 = pow((goal[1] - xyState1_->values[1]), 2);
+      double deltax_v2 = pow((goal[4] - xyState2_->values[0]), 2);
+      double deltay_v2 = pow((goal[5] - xyState2_->values[1]), 2);
+      double deltax_v3 = pow((goal[8] - xyState3_->values[0]), 2);
+      double deltay_v3 = pow((goal[9] - xyState3_->values[1]), 2);
+
+      double d1 = sqrt(deltax_v1 + deltay_v1);
+      double d2 = sqrt(deltax_v2 + deltay_v2);
+      double d3 = sqrt(deltax_v3 + deltay_v3);
+
+      distance.push_back(d1);
+      distance.push_back(d2);
+      distance.push_back(d3);
+
+      return distance;
+    }
+
     virtual std::vector<double> TwoLinearDistance(const ob::State *st) const
     {
       std::vector<double> distance;
@@ -1115,200 +1308,200 @@ class MyArbitraryGoal : public ompl::base::Goal
     }
 };
 
-// the projection for EST / KPIECE planners
-class MyProjection : public ob::ProjectionEvaluator
-{
-public:
- 
-  MyProjection(const ob::StateSpacePtr &space, const int NumVs,
-    const std::string model) : ob::ProjectionEvaluator(space)
-  {
-    numVs_ = NumVs;
-    model_ = model;
-  }
-  int numVs_;
-  std::string model_;
-  const double x_ = 2.0;
-  const double y_ = 2.0;
- 
-  virtual unsigned int getDimension(void) const
-  {
-    if (numVs_ == 2)
-      return 4;
-    else if (numVs_ == 3)
-      return 6;
-    else
-    {
-      std::cout << "Projection Not implemented for specified number of vehicles." << std::endl;
-      exit(1);
-    }
-    
-  }
- 
-  virtual void defaultCellSizes(void)
-  {
-    if (numVs_ == 2)
-    {
-      cellSizes_.resize(4);
-      cellSizes_[0] = x_;
-      cellSizes_[1] = y_;
-      cellSizes_[2] = x_;
-      cellSizes_[3] = y_;
-    }
-    else if (numVs_ == 3)
-    {
-      cellSizes_.resize(6);
-      cellSizes_[0] = x_;
-      cellSizes_[1] = y_;
-      cellSizes_[2] = x_;
-      cellSizes_[3] = y_;
-      cellSizes_[4] = x_;
-      cellSizes_[5] = y_;
-    } 
-  }
-
-  virtual void project(const ob::State *state, ob::EuclideanProjection &projection) const  // 
-  {
-      auto cs_ = state->as<ompl::base::CompoundStateSpace::StateType>();
-      
-      if (model_ == "2Unicycle2ndOrder" )
-      {
-        if (numVs_ == 2)
-        {
-          auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
-          auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(3);
-  
-            // projection will be 2 vehicles x, y pos
-            projection(0) = xyState1_->values[0];
-            projection(1) = xyState1_->values[1];
-            projection(2) = xyState2_->values[0];
-            projection(3) = xyState2_->values[1];
-        }
-        else
-        {
-          std::cout << "Projection Not Implemented for Current Number of Unicycle vehicles" << std::endl;
-          exit(1);
-        }
-      }
-      else if (model_ == "2KinematicCars2ndOrder" )
-      {
-        if (numVs_ == 2)
-        {
-          auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
-          auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
-  
-            // projection will be 2 vehicles x, y pos
-            projection(0) = xyState1_->values[0];
-            projection(1) = xyState1_->values[1];
-            projection(2) = xyState2_->values[0];
-            projection(3) = xyState2_->values[1];
-        }
-        else
-        {
-          std::cout << "Projection Not Implemented for Current Number of Unicycle vehicles" << std::endl;
-          exit(1);
-        }
-      }
-      else if (model_ == "2Linear2ndOrder")
-      {
-        if (numVs_ == 2)
-        {
-          auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
-          auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(1);
-  
-            // projection will be 2 vehicles x, y pos
-            projection(0) = xyState1_->values[0];
-            projection(1) = xyState1_->values[1];
-            projection(2) = xyState2_->values[0];
-            projection(3) = xyState2_->values[1];
-        }
-        else
-        {
-          std::cout << "Projection Not Implemented for Current Number of Linear vehicles" << std::endl;
-          exit(1);
-        }
-      }
-      else if (model_ == "2Linear" || model_ == "3Linear")
-      {
-        std::cout << "using default projection... user beware" << std::endl;
-      	if (numVs_ == 2)
-        {
-          auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
-          auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(1);
-  
-            // projection will be 2 vehicles x, y pos
-            projection(0) = xyState1_->values[0];
-            projection(1) = xyState1_->values[1];
-            projection(2) = xyState2_->values[0];
-            projection(3) = xyState2_->values[1];
-        }
-        else if (numVs_ == 3)
-        {
-          auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
-          auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(1);
-          auto xyState3_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
-  
-          // projection will be average of 2 vehicle positions
-          projection(0) = xyState1_->values[0];
-          projection(1) = xyState1_->values[1];
-          projection(2) = xyState2_->values[0];
-          projection(3) = xyState2_->values[1];
-          projection(4) = xyState3_->values[0];
-          projection(5) = xyState3_->values[1];
-        }
-
-      }
-      else
-      {
-        if (model_ != "3Linear" && model_ != "2Linear" )
-        {
-          if (numVs_ == 2)
-          {
-            auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
-            auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
-  
-            // projection will be 2 vehicles x, y pos
-            projection(0) = xyState1_->values[0];
-            projection(1) = xyState1_->values[1];
-            projection(2) = xyState2_->values[0];
-            projection(3) = xyState2_->values[1];
-          }
-          else if (numVs_ == 3)
-          {
-            auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
-            auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
-            auto xyState3_ = cs_->as<ob::RealVectorStateSpace::StateType>(4);
-  
-            // projection will be average of 2 vehicle positions
-            projection(0) = xyState1_->values[0];
-            projection(1) = xyState1_->values[1];
-            projection(2) = xyState2_->values[0];
-            projection(3) = xyState2_->values[1];
-            projection(4) = xyState3_->values[0];
-            projection(5) = xyState3_->values[1];
-          }
-          else
-          {
-            std::cout << "Projection Not Implemented for Current Number of vehicles" << std::endl;
-            exit(1);
-          }
-      }
-        std::cout << "Projection Not Implemented for Current Model" << std::endl;
-        exit(1);
-      }
-  }
-};
-
-
-// this state validity checker always returns TRUE
-// it is used so that the user can get everything else working prior to worrying about 
-// collision checking
-// bool isStateValid_3Unicycle(const ob::State *state)
+// // the projection for EST / KPIECE planners
+// class MyProjection : public ob::ProjectionEvaluator
 // {
-//   auto cs_ = state->as<ompl::base::CompoundStateSpace::StateType>();
-//   auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
-//   auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
-//   auto xyState3_ = cs_->as<ob::RealVectorStateSpace::StateType>(4);
+// public:
+ 
+//   MyProjection(const ob::StateSpacePtr &space, const int NumVs,
+//     const std::string model) : ob::ProjectionEvaluator(space)
+//   {
+//     numVs_ = NumVs;
+//     model_ = model;
+//   }
+//   int numVs_;
+//   std::string model_;
+//   const double x_ = 2.0;
+//   const double y_ = 2.0;
+ 
+//   virtual unsigned int getDimension(void) const
+//   {
+//     if (numVs_ == 2)
+//       return 4;
+//     else if (numVs_ == 3)
+//       return 6;
+//     else
+//     {
+//       std::cout << "Projection Not implemented for specified number of vehicles." << std::endl;
+//       exit(1);
+//     }
+    
+//   }
+ 
+//   virtual void defaultCellSizes(void)
+//   {
+//     if (numVs_ == 2)
+//     {
+//       cellSizes_.resize(4);
+//       cellSizes_[0] = x_;
+//       cellSizes_[1] = y_;
+//       cellSizes_[2] = x_;
+//       cellSizes_[3] = y_;
+//     }
+//     else if (numVs_ == 3)
+//     {
+//       cellSizes_.resize(6);
+//       cellSizes_[0] = x_;
+//       cellSizes_[1] = y_;
+//       cellSizes_[2] = x_;
+//       cellSizes_[3] = y_;
+//       cellSizes_[4] = x_;
+//       cellSizes_[5] = y_;
+//     } 
+//   }
+
+//   virtual void project(const ob::State *state, ob::EuclideanProjection &projection) const  // 
+//   {
+//       auto cs_ = state->as<ompl::base::CompoundStateSpace::StateType>();
+      
+//       if (model_ == "2Unicycle2ndOrder" )
+//       {
+//         if (numVs_ == 2)
+//         {
+//           auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+//           auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(3);
+  
+//             // projection will be 2 vehicles x, y pos
+//             projection(0) = xyState1_->values[0];
+//             projection(1) = xyState1_->values[1];
+//             projection(2) = xyState2_->values[0];
+//             projection(3) = xyState2_->values[1];
+//         }
+//         else
+//         {
+//           std::cout << "Projection Not Implemented for Current Number of Unicycle vehicles" << std::endl;
+//           exit(1);
+//         }
+//       }
+//       else if (model_ == "2KinematicCars2ndOrder" )
+//       {
+//         if (numVs_ == 2)
+//         {
+//           auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+//           auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
+  
+//             // projection will be 2 vehicles x, y pos
+//             projection(0) = xyState1_->values[0];
+//             projection(1) = xyState1_->values[1];
+//             projection(2) = xyState2_->values[0];
+//             projection(3) = xyState2_->values[1];
+//         }
+//         else
+//         {
+//           std::cout << "Projection Not Implemented for Current Number of Unicycle vehicles" << std::endl;
+//           exit(1);
+//         }
+//       }
+//       else if (model_ == "2Linear2ndOrder")
+//       {
+//         if (numVs_ == 2)
+//         {
+//           auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+//           auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(1);
+  
+//             // projection will be 2 vehicles x, y pos
+//             projection(0) = xyState1_->values[0];
+//             projection(1) = xyState1_->values[1];
+//             projection(2) = xyState2_->values[0];
+//             projection(3) = xyState2_->values[1];
+//         }
+//         else
+//         {
+//           std::cout << "Projection Not Implemented for Current Number of Linear vehicles" << std::endl;
+//           exit(1);
+//         }
+//       }
+//       else if (model_ == "2Linear" || model_ == "3Linear" || model_ == "3Linear2ndOrder")
+//       {
+//         std::cout << "using default projection... user beware" << std::endl;
+//       	if (numVs_ == 2)
+//         {
+//           auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+//           auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(1);
+  
+//             // projection will be 2 vehicles x, y pos
+//             projection(0) = xyState1_->values[0];
+//             projection(1) = xyState1_->values[1];
+//             projection(2) = xyState2_->values[0];
+//             projection(3) = xyState2_->values[1];
+//         }
+//         else if (numVs_ == 3)
+//         {
+//           auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+//           auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(1);
+//           auto xyState3_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
+  
+//           // projection will be average of 2 vehicle positions
+//           projection(0) = xyState1_->values[0];
+//           projection(1) = xyState1_->values[1];
+//           projection(2) = xyState2_->values[0];
+//           projection(3) = xyState2_->values[1];
+//           projection(4) = xyState3_->values[0];
+//           projection(5) = xyState3_->values[1];
+//         }
+
+//       }
+//       else
+//       {
+//         if (model_ != "3Linear" && model_ != "2Linear" )
+//         {
+//           if (numVs_ == 2)
+//           {
+//             auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+//             auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
+  
+//             // projection will be 2 vehicles x, y pos
+//             projection(0) = xyState1_->values[0];
+//             projection(1) = xyState1_->values[1];
+//             projection(2) = xyState2_->values[0];
+//             projection(3) = xyState2_->values[1];
+//           }
+//           else if (numVs_ == 3)
+//           {
+//             auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+//             auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
+//             auto xyState3_ = cs_->as<ob::RealVectorStateSpace::StateType>(4);
+  
+//             // projection will be average of 2 vehicle positions
+//             projection(0) = xyState1_->values[0];
+//             projection(1) = xyState1_->values[1];
+//             projection(2) = xyState2_->values[0];
+//             projection(3) = xyState2_->values[1];
+//             projection(4) = xyState3_->values[0];
+//             projection(5) = xyState3_->values[1];
+//           }
+//           else
+//           {
+//             std::cout << "Projection Not Implemented for Current Number of vehicles" << std::endl;
+//             exit(1);
+//           }
+//       }
+//         std::cout << "Projection Not Implemented for Current Model" << std::endl;
+//         exit(1);
+//       }
+//   }
+// };
+
+
+// // this state validity checker always returns TRUE
+// // it is used so that the user can get everything else working prior to worrying about 
+// // collision checking
+// bool isStateValid_true(const ob::State *state)
+// {
+//   // auto cs_ = state->as<ompl::base::CompoundStateSpace::StateType>();
+//   // auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+//   // auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
+//   // auto xyState3_ = cs_->as<ob::RealVectorStateSpace::StateType>(4);
 
 //   // return a value that is always true but uses the two variables we define, so we avoid compiler warnings
 //   return true;
@@ -1326,7 +1519,7 @@ bool plan(std::string planner, std::vector<double> bndry, std::vector<double> go
     const int NumberofVehicles, const int NumberofControls, const int DimensionOfVehicle, 
     int MaxSegments, bool benchmark, std::string solutionName = "txt/path.txt")
 {
-    bool solved = false;
+    bool solved_ = false;
     oc::SimpleSetupPtr ss;
     CreateSimpleSetup(ss, bndry, gol, start, model, Radius);
 
@@ -1335,6 +1528,11 @@ bool plan(std::string planner, std::vector<double> bndry, std::vector<double> go
     if (model == "KinematicCar")
     {
       ss->setStateValidityChecker(std::make_shared<KinematicCarStateValidityChecker>(
+        si, obs));
+    }
+    else if (model == "mlExample")
+    {
+    	ss->setStateValidityChecker(std::make_shared<mlExampleStateValidityChecker>(
         si, obs));
     }
     else if (model == "2KinematicCars")
@@ -1388,6 +1586,11 @@ bool plan(std::string planner, std::vector<double> bndry, std::vector<double> go
       ss->setStateValidityChecker(std::make_shared<Two2ndOrderCarStateValidityChecker>(
         si, obs));
     }
+    else if (model == "3Linear2ndOrder")
+    {
+      ss->setStateValidityChecker(std::make_shared<Three2ndOrderLinearCarStateValidityChecker>(
+        si, obs));
+    }
     else
     {
       std::cout << "Current State Validity Checker Not Implemented For Model." << std::endl;
@@ -1423,32 +1626,32 @@ bool plan(std::string planner, std::vector<double> bndry, std::vector<double> go
 
       ob::PlannerStatus solved = ss->solve(planningTime);
     }
-    else if (planner == "MAPSEST")
-    {
-      const ob::StateSpacePtr space = ss->getStateSpace();
+    // else if (planner == "MAPSEST")
+    // {
+    //   const ob::StateSpacePtr space = ss->getStateSpace();
 
-      // space->registerDefaultProjection(ob::ProjectionEvaluatorPtr(new MyProjection(space)));
+    //   // space->registerDefaultProjection(ob::ProjectionEvaluatorPtr(new MyProjection(space)));
 
-      // space->registerDefaultProjection(new ob::MyProjection(space));
+    //   // space->registerDefaultProjection(new ob::MyProjection(space));
 
-      // ob::ProjectionEvaluatorPtr Projector(new MyProjection(space));
+    //   // ob::ProjectionEvaluatorPtr Projector(new MyProjection(space));
 
-      space->registerDefaultProjection(
-        ob::ProjectionEvaluatorPtr(new MyProjection(space, NumberofVehicles, model)));
+    //   // space->registerDefaultProjection(
+    //   //   ob::ProjectionEvaluatorPtr(new MyProjection(space, NumberofVehicles, model)));
 
-      // space->registerProjection("myProjection", ob::ProjectionEvaluatorPtr(new MyProjection(space)));
+    //   // space->registerProjection("myProjection", ob::ProjectionEvaluatorPtr(new MyProjection(space)));
 
-      ob::PlannerPtr planner(new oc::MAPSEST(ss->getSpaceInformation(),
-        NumberofVehicles, NumberofControls, DimensionOfVehicle, MaxSegments, gol, Radius, benchmark, model));
+    //   ob::PlannerPtr planner(new oc::MAPSEST(ss->getSpaceInformation(),
+    //     NumberofVehicles, NumberofControls, DimensionOfVehicle, MaxSegments, gol, Radius, benchmark, model));
 
-      // planner->setProjectionEvaluator("myProjection");
+    //   // planner->setProjectionEvaluator("myProjection");
 
-      ss->setPlanner(planner);
+    //   ss->setPlanner(planner);
 
-      ss->setup();
+    //   ss->setup();
 
-      ob::PlannerStatus solved = ss->solve(planningTime);
-    }
+    //   ob::PlannerStatus solved = ss->solve(planningTime);
+    // }
     else if (planner == "MAPSRRTmotion")
     {
       ob::PlannerPtr planner(new oc::MAPSRRTmotion(ss->getSpaceInformation(),
@@ -1524,6 +1727,8 @@ bool plan(std::string planner, std::vector<double> bndry, std::vector<double> go
       {
         std::cout << "Found solution:" << std::endl;
 
+        solved_ = true;
+
         oc::PathControl path = ss->getSolutionPath();
         std::ofstream PathFile;
         PathFile.open("txt/path.txt");
@@ -1547,7 +1752,7 @@ bool plan(std::string planner, std::vector<double> bndry, std::vector<double> go
     else
       std::cout << "Incorrect planner selected... exiting." << std::endl;
 
-    return solved;
+    return solved_;
 
 }
 
@@ -1586,7 +1791,7 @@ void benchmark(std::vector<double> bndry, std::vector<double> gol,
   const ob::StateSpacePtr space = ss->getStateSpace();
 
   // initialize the benchmark object
-  ompl::tools::Benchmark b(*(ss.get()), "my experiment");
+  ompl::tools::Benchmark b(*(ss.get()), "Lazy vs Complete");
 
   // initialize planners
 
@@ -1598,16 +1803,21 @@ void benchmark(std::vector<double> bndry, std::vector<double> gol,
   // ob::PlannerPtr MapsRrtMotion(new oc::MAPSRRTmotion(ss->getSpaceInformation(),
   //       NumberofVehicles, NumberofControls, DimensionOfVehicle, MaxSegments, gol, Radius, benchmark, model));
   
-  // MAPSRRT Cost
+  // MAPS-RRT Cost
   ob::PlannerPtr MapsRrtCost(new oc::MAPSRRTcost(ss->getSpaceInformation(),
         NumberofVehicles, NumberofControls, DimensionOfVehicle, MaxSegments, gol, Radius, benchmark, model));
   
-  // MAPSEST
-  space->registerDefaultProjection(
-        ob::ProjectionEvaluatorPtr(new MyProjection(space, NumberofVehicles, model)));
+  // Lazy MAPS-RRT Cost
+  // ob::PlannerPtr LazyMAPS(new oc::LazyMAPSRRTcost(ss->getSpaceInformation(),
+  //      NumberofVehicles, NumberofControls, DimensionOfVehicle, MaxSegments, gol, Radius, benchmark, model));
 
-  ob::PlannerPtr MapsEst(new oc::MAPSEST(ss->getSpaceInformation(),
-    NumberofVehicles, NumberofControls, DimensionOfVehicle, MaxSegments, gol, Radius, benchmark, model));
+
+  // MAPSEST
+  // space->registerDefaultProjection(
+  //       ob::ProjectionEvaluatorPtr(new MyProjection(space, NumberofVehicles, model)));
+
+  // ob::PlannerPtr MapsEst(new oc::MAPSEST(ss->getSpaceInformation(),
+  //   NumberofVehicles, NumberofControls, DimensionOfVehicle, MaxSegments, gol, Radius, benchmark, model));
 
 
   // RRT
@@ -1618,7 +1828,7 @@ void benchmark(std::vector<double> bndry, std::vector<double> gol,
     // NumberofControls, Radius));
 
   // add the planners to the benchmark
-  b.addPlanner(MapsEst);
+  // b.addPlanner(LazyMAPS);
   b.addPlanner(MapsRrtCost);
   // b.addPlanner(Rrt);
   // b.addPlanner(RrtPlus);
@@ -1643,6 +1853,8 @@ void benchmark(std::vector<double> bndry, std::vector<double> gol,
 
 
 }
+
+// txt/Shaull/2agents/2ndOrderLin/example1_2Linear2ndOrder.txt
 
 // AO_X(Planner, bndry, gol, obs, strt, DynModel, Tollorance, data, 
 //           NumVs, NumCs, dim, numRuns, bench);
@@ -1675,6 +1887,7 @@ void AO_X(std::string planner, std::vector<double> bndry, std::vector<double> go
     {
     
       int MaxSegments = getSolutionCost() - 1;
+      std::cout << MaxSegments << std::endl;
       if (MaxSegments == 0 || !solved)
         break;
       else
@@ -1801,6 +2014,7 @@ int main(int /*argc*/, char ** /*argv*/)
 
     std::cout << "OMPL version: " << OMPL_VERSION << std::endl;
     // Define the multi-agent problem from world file
+    std::string world;
     std::string Task;
     std::string Planner;
     std::string DynModel;
@@ -1817,7 +2031,10 @@ int main(int /*argc*/, char ** /*argv*/)
     //obstacle 3.75 2.75 -0.5233 0.25 2 1.5233
     // obstacle 2.75 2.75 -0.5233 0.25 3 1.5233
 
-    readFile("txt/Shaull/2agents/2ndOrderUni/example1_2Unicycles2ndOrder.txt", bndry, gol, obs, strt, DynModel, dim, NumVs, NumCs, data);
+    std::cout << "Enter the path to the word file: " << std::endl;
+    std::cin >> world;
+
+    readFile(world, bndry, gol, obs, strt, DynModel, dim, NumVs, NumCs, data);
     // MyPrint(obs);
     double SolveTime;
     double Tollorance;
@@ -1923,7 +2140,7 @@ int main(int /*argc*/, char ** /*argv*/)
       std::cout << "Enter the radius of each vehicles goal region: ";
       std::cin >> Tollorance;
 
-      const char* name = "results_2linear_noLimit_3";
+      const char* name = "results_congested_1c_1";
 
       benchmark(bndry, gol, obs, strt, DynModel, SolveTime, Tollorance, data, NumVs, NumCs, dim, 
         MaxSegments, bench, NumberofBenchmarkRuns, name);

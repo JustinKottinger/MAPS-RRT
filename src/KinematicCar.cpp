@@ -19,6 +19,68 @@ namespace bg = boost::geometry;
 namespace trans = boost::geometry::strategy::transform;
 
 
+// Definition of the ODE for the kinematic car.
+// This method is analogous to the above KinematicCarModel::ode function.
+void KinematicCarODE (const oc::ODESolver::StateType& q, const oc::Control* control, 
+    oc::ODESolver::StateType& qdot)
+{
+    const double *u = control->as<oc::RealVectorControlSpace::ControlType>()->values;
+    const double theta = q[2];
+    const double carLength = 0.2;
+
+    // Zero out qdot
+    qdot.resize (q.size (), 0);
+
+    qdot[0] = u[0] * cos(theta);
+    qdot[1] = u[0] * sin(theta);
+    qdot[2] = u[0] * tan(u[1]) / carLength;
+}
+
+// This is a callback method invoked after numerical integration.
+void KinematicCarPostIntegration (const ob::State* /*state*/, const oc::Control* /*control*/, 
+    const double /*duration*/, ob::State *result)
+{
+    // Normalize orientation between 0 and 2*pi
+    ob::SO2StateSpace SO2;
+    SO2.enforceBounds(result->as<ob::SE2StateSpace::StateType>()->
+        as<ob::SO2StateSpace::StateType>(1));
+}
+
+
+// Definition of ODe for 2 dynamical car ODE
+void mlExampleODE (const oc::ODESolver::StateType& q, 
+    const oc::Control* control, oc::ODESolver::StateType& qdot)
+{
+    // std::cout << "here" << std::endl;
+    const double *u = control->as<oc::RealVectorControlSpace::ControlType>()->values;
+    // q = x, y, z, psi, theta, v
+    // c = omega, alpha, a 
+    const double psi = q[3];
+    const double theta = q[4];
+    const double v = q[5];
+    
+    // Zero out qdot
+    qdot.resize (q.size (), 0);
+
+    qdot[0] = v * cos(psi) * cos(theta);
+    qdot[1] = v * sin(psi) * cos(theta);
+    qdot[2] = v * sin(theta);  // v was q[2]
+    qdot[3] = u[0];
+    qdot[4] = u[1];
+    qdot[5] = u[2];
+}
+
+void postProp_mlExample(const ob::State *q, const oc::Control *ctl, 
+    const double duration, ob::State *qnext)
+{
+    //pull the angles from both cars
+    ob::CompoundState* cs = qnext->as<ob::CompoundState>();
+
+    ob::SO2StateSpace::StateType* angleState1 = cs->as<ob::SO2StateSpace::StateType>(1);
+}
+
+
+
 // this function is used for any 2D projection needed
 // include but not limited to: obs checking, and path segmenting
 std::vector<polygon> TwoKinematicCarsModel::GetPolygons()
@@ -243,31 +305,6 @@ void list_coordinates(point const& p)
 } 
 
 
-
-// Definition of the ODE for the kinematic car.
-// This method is analogous to the above KinematicCarModel::ode function.
-void KinematicCarODE (const oc::ODESolver::StateType& q, const oc::Control* control, oc::ODESolver::StateType& qdot)
-{
-    const double *u = control->as<oc::RealVectorControlSpace::ControlType>()->values;
-    const double theta = q[2];
-    double carLength = 0.2;
-
-    // Zero out qdot
-    qdot.resize (q.size (), 0);
-
-    qdot[0] = u[0] * cos(theta);
-    qdot[1] = u[0] * sin(theta);
-    qdot[2] = u[0] * tan(u[1]) / carLength;
-}
-
-// This is a callback method invoked after numerical integration.
-void KinematicCarPostIntegration (const ob::State* /*state*/, const oc::Control* /*control*/, const double /*duration*/, ob::State *result)
-{
-    // Normalize orientation between 0 and 2*pi
-    ob::SO2StateSpace SO2;
-    SO2.enforceBounds(result->as<ob::SE2StateSpace::StateType>()->as<ob::SO2StateSpace::StateType>(1));
-}
-
 // multi agent ODE function
 void TwoKinematicCarsODE (const oc::ODESolver::StateType& q, const oc::Control* control, oc::ODESolver::StateType& qdot)
 {
@@ -313,7 +350,7 @@ void Two2ndOrderCarsODE (const oc::ODESolver::StateType& q, const oc::Control* c
     // std::cout << "here" << std::endl;
     const double *u = control->as<oc::RealVectorControlSpace::ControlType>()->values;
     // q = x1, y1, v1, phi1, theta1, x2, y2, v2, phi2, theta2
-    // c = v1, phi1, v2, phi2
+    // c = a1, phi1, a2, phi2
 
     // velocities
     const double v1 = q[2];

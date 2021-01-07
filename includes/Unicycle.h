@@ -119,8 +119,8 @@ class TwoUnicycleModels
             rot2_ = cs_->as<ob::SO2StateSpace::StateType>(3);
 
             const int NumVs_ = 2;
-            carLength_ = 0.01;
-            carWidth_ = 0.01;
+            carLength_ = 0.5;
+            carWidth_ = 0.5;
         }
         // 
 

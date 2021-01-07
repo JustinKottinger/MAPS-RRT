@@ -185,6 +185,8 @@ std::vector<double> ompl::control::MAPSRRTcost::getDistance(const base::State *s
         distance = Two2ndOrderCarDistance(st);
     else if (model_ == "2Linear2ndOrder")
         distance = Two2ndOrderLinearDistance(st);
+    else if (model_ == "3Linear2ndOrder")
+        distance = ThreeLinear2ndOrderDistance(st);
     else
     {
         std::cout << "Current Distance Model Not Implemented." << std::endl;
@@ -192,6 +194,32 @@ std::vector<double> ompl::control::MAPSRRTcost::getDistance(const base::State *s
     }
     return distance;
 }
+
+std::vector<double> ompl::control::MAPSRRTcost::ThreeLinear2ndOrderDistance(const ob::State *st) const
+    {
+      std::vector<double> distance;
+      auto cs_ = st->as<ompl::base::CompoundStateSpace::StateType>();
+      auto xyState1_ = cs_->as<ob::RealVectorStateSpace::StateType>(0);
+      auto xyState2_ = cs_->as<ob::RealVectorStateSpace::StateType>(1);
+      auto xyState3_ = cs_->as<ob::RealVectorStateSpace::StateType>(2);
+
+      double deltax_v1 = pow((g[0] - xyState1_->values[0]), 2);
+      double deltay_v1 = pow((g[1] - xyState1_->values[1]), 2);
+      double deltax_v2 = pow((g[4] - xyState2_->values[0]), 2);
+      double deltay_v2 = pow((g[5] - xyState2_->values[1]), 2);
+      double deltax_v3 = pow((g[8] - xyState3_->values[0]), 2);
+      double deltay_v3 = pow((g[9] - xyState3_->values[1]), 2);
+
+      double d1 = sqrt(deltax_v1 + deltay_v1);
+      double d2 = sqrt(deltax_v2 + deltay_v2);
+      double d3 = sqrt(deltax_v3 + deltay_v3);
+
+      distance.push_back(d1);
+      distance.push_back(d2);
+      distance.push_back(d3);
+
+      return distance;
+    }
 
 std::vector<double> ompl::control::MAPSRRTcost::Two2ndOrderCarDistance(const ob::State *st) const
 {
@@ -490,7 +518,7 @@ void ompl::control::MAPSRRTcost::overrideStates(const std::vector<int> DoNotProp
 {
     if (model_ == "2KinematicCars" || model_ == "3KinematicCars")
         OverrideKinCars(DoNotProp, source, result, control);
-    else if ((model_ == "2Linear") || (model_ == "3Linear"))
+    else if ((model_ == "2Linear") || (model_ == "3Linear") || (model_ == "3Linear2ndOrder"))
         OverrideLinCars(DoNotProp, source, result, control);
     else if (model_ == "3Unicycle" || model_ == "2Unicycle")
         OverrideUniCars(DoNotProp, source, result, control);
@@ -832,7 +860,7 @@ std::vector<Point> ompl::control::MAPSRRTcost::MakeLinearPath(const base::State 
     std::vector<Point> VehiclePoints;
     if (model_ == "2KinematicCars" || model_ == "3KinematicCars" || model_ == "2KinematicCars2ndOrder")
         VehiclePoints = MakeKinPath(st);
-    else if ((model_ == "2Linear") || (model_ == "3Linear") || (model_ == "2Linear2ndOrder"))
+    else if ((model_ == "2Linear") || (model_ == "3Linear") || (model_ == "2Linear2ndOrder") || (model_ == "3Linear2ndOrder"))
         VehiclePoints = MakeLinPath(st);
     else if (model_ == "3Unicycle" || model_ == "2Unicycle")
         VehiclePoints = MakeUniPath(st);
@@ -979,7 +1007,7 @@ void ompl::control::MAPSRRTcost::Get2DimDistance(Motion *motion, const base::Sta
     if ((model_ == "2KinematicCars") || (model_ == "3Unicycle") || 
         model_ == "3KinematicCars" || model_ == "2Unicycle" || model_ == "2KinematicCars2ndOrder")
         Get2DimDist2KinCars(motion, source, result);
-    else if ((model_ == "2Linear") || (model_ == "3Linear") || (model_ == "2Linear2ndOrder"))
+    else if ((model_ == "2Linear") || (model_ == "3Linear") || (model_ == "2Linear2ndOrder") || (model_ == "3Linear2ndOrder"))
         Get2DimDist2LinCars(motion, source, result);
     else if (model_ == "2Unicycle2ndOrder")
         Get2DimDist2ndOrderUni(motion, source, result);
@@ -1728,7 +1756,7 @@ int ompl::control::MAPSRRTcost::Project2D_2Vehicles(Motion *NewMotion)
     NewMotion->LocationsOfIntersect = LocOfInt;
     return NumIntersect;
 }
-
+// /Users/Kotti/Desktop/MAPS-RRT/txt/Shaull/2agents/2ndOrderKin/example1_2Kin2ndOrder.txt
 // main algorithm
 ompl::base::PlannerStatus ompl::control::MAPSRRTcost::solve(const base::PlannerTerminationCondition &ptc)
 {
@@ -1743,6 +1771,25 @@ ompl::base::PlannerStatus ompl::control::MAPSRRTcost::solve(const base::PlannerT
         siC_->nullControl(motion->control);
         nn_->add(motion);
     }
+
+
+    // init vector of motions
+    std::vector<Motion *> v;
+    // fill it with all motions in tree
+    nn_->list(v);
+
+    for (int i = 0; i < v.size(); i++)
+    {
+      // turn motion to state
+      auto *state = v[i]->state->as<ompl::base::CompoundStateSpace::StateType>();
+        
+      // get the xy point of state
+      auto *xyState = state->as<ob::RealVectorStateSpace::StateType>(0);
+
+      // get the point for the vehicle state
+      std::cout << xyState->values[0] << " " << xyState->values[1] << std::endl;
+    }
+
 
     if (nn_->size() == 0)
     {

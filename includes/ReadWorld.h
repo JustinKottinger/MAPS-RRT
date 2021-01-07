@@ -3,7 +3,9 @@
 #include <iostream>
 #include <vector>
 
-void readFile(const char* filename, std::vector<double> &b, std::vector<double> &g, 
+// txt/Shaull/2agents/Linear/example3_2Linear.txt
+
+void readFile(std::string filename, std::vector<double> &b, std::vector<double> &g, 
 	std::vector<double> &obs, std::vector<double> &strt, std::string &DynamicModel, int &dimension,
 	int &numVehicles, int &numControls, std::vector<std::string> &data);
 

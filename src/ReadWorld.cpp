@@ -69,7 +69,7 @@ int getSolutionCost()
 
 // takes in a "world" file that includes info for workspace
 // this function reads in the information and fills the data into vectors
-void readFile(const char* filename, std::vector<double> &b, std::vector<double> &g, 
+void readFile(std::string filename, std::vector<double> &b, std::vector<double> &g, 
 	std::vector<double> &obs, std::vector<double> &strt, std::string &DynamicModel, int &dimension,
 	int &numVehicles, int &numControls, std::vector<std::string> &data)
 {
@@ -128,7 +128,7 @@ void readFile(const char* filename, std::vector<double> &b, std::vector<double> 
 		}
 		else if (str == "boundary")
 		{
-			for (int i = 0; i<(dimension*numVehicles); i++)
+			for (int i = 0; i<(dimension*2); i++)
 			{
 				std::string strB;
 				fin >> strB;
@@ -173,6 +173,10 @@ void readFile(const char* filename, std::vector<double> &b, std::vector<double> 
 		}
 	}
 	fin.close();
+	MyPrint(b);
+	MyPrint(obs);
+	MyPrint(strt);
+	MyPrint(g);
 	if (!bflg)
 		std::cout<<"No boundary is give"<< std::endl;
 	if (!gflg)

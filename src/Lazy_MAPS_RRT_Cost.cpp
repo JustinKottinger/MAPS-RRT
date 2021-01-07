@@ -1680,7 +1680,6 @@ ompl::base::PlannerStatus ompl::control::LazyMAPSRRTcost::solve(const base::Plan
     base::State *xstate = siC_->allocState();
     // std::cout << "here";
     // exit(1);
-
     while (ptc == false)
     {
         /* sample random state (with goal biasing) */
@@ -1725,16 +1724,20 @@ ompl::base::PlannerStatus ompl::control::LazyMAPSRRTcost::solve(const base::Plan
             
             if (solv)
             {
-                std::cout << "found solution" << std::endl;
+                // std::cout << "found solution" << std::endl;
                 approxdif = dist;
                 solution = motion;
                 // FindTotalIntersections(solution);
                 // unsigned int cost = FindTotalPathCost(solution);
+                start = std::clock(); 
                 int cost = PostProcess(solution);
+                end = std::clock();
+                double time_taken = double(end - start) / double(CLOCKS_PER_SEC);
+                time_ = time_ + time_taken;
 
                 if (cost <= MaxSegments_)
                 {                     
-                    // start = std::clock();
+                    FinalCost_ = cost;
                     break;
                 }
                 else
@@ -1755,7 +1758,9 @@ ompl::base::PlannerStatus ompl::control::LazyMAPSRRTcost::solve(const base::Plan
                         CurrMotion = temp;
                         n += 1;
                     }
-                    std::cout << "not valid sol -- pruned " << n << "nodes" << std::endl;
+                    // std::cout << "not valid sol -- pruned " << n << "nodes" << std::endl;
+                    solution = nullptr;
+                    approxdif = std::numeric_limits<double>::infinity();
                 }
             }
             if (dist < approxdif)
@@ -1772,11 +1777,11 @@ ompl::base::PlannerStatus ompl::control::LazyMAPSRRTcost::solve(const base::Plan
 
     bool solved = false;
     bool approximate = false;
-    if (solution == nullptr)
-    {
-        solution = approxsol;
-        approximate = true;
-    }
+    // if (solution == nullptr)
+    // {
+    //     solution = approxsol;
+    //     approximate = true;
+    // }
 
     // Motion *last = solution;
     
@@ -1805,7 +1810,7 @@ ompl::base::PlannerStatus ompl::control::LazyMAPSRRTcost::solve(const base::Plan
         auto path(std::make_shared<MAPSRRTPathControl>(si_));
         // auto path(std::make_shared<PathControl>(si_));
         // auto path(std::make_shared<PathControl>(si_));
-        FinalCost_ = mpath[0]->GetCost();
+        // FinalCost_ = mpath[0]->GetCost();
         for (int i = mpath.size() - 1; i >= 0; --i)
             if (mpath[i]->parent)
             {

@@ -208,6 +208,8 @@ namespace ompl
 
             std::vector<double> Two2ndOrderLinearDistance(const ob::State *st) const;
 
+            std::vector<double> ThreeLinear2ndOrderDistance(const ob::State *st) const;
+
             std::vector<double> Two2ndOrderUnicycleDistance(const ob::State *st) const;
 
             std::vector<double> ThreeUnicycleDistance(const ob::State *st) const;
